@@ -12,3 +12,4 @@ wheels/
 *.txt
 *.pdf
 .env
+data/
