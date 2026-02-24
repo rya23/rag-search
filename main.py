@@ -1,5 +1,4 @@
 import argparse
-import sys
 
 
 def cmd_ingest(args):
@@ -20,13 +19,15 @@ def cmd_ingest(args):
 
 
 def cmd_query(args):
-    from cli.query import rag_query
+    from cli.query import build_pipeline
+
+    print(f"Initializing pipeline (retriever={args.retriever}, k={args.k})...")
+    pipeline = build_pipeline(mode=args.retriever, k=args.k)
 
     if args.question:
-        answer = rag_query(args.question, k=args.k)
+        answer = pipeline.run(args.question)
         print(answer)
     else:
-        # Interactive loop
         print("RAG query mode. Type 'exit' or Ctrl-C to quit.\n")
         while True:
             try:
@@ -38,7 +39,7 @@ def cmd_query(args):
                 continue
             if question.lower() in ("exit", "quit"):
                 break
-            answer = rag_query(question, k=args.k)
+            answer = pipeline.run(question)
             print(f"Assistant: {answer}\n")
 
 
@@ -58,16 +59,26 @@ def main():
     # query subcommand
     query_parser = subparsers.add_parser("query", help="Query the RAG pipeline.")
     query_parser.add_argument(
-        "-q",
-        "--question",
+        "-q", "--question",
         help="Single question to ask. If omitted, starts an interactive loop.",
         default=None,
     )
     query_parser.add_argument(
         "-k",
-        help="Number of chunks to retrieve (default: 5).",
+        help="Number of chunks to retrieve per query (default: 5).",
         type=int,
         default=5,
+    )
+    query_parser.add_argument(
+        "--retriever",
+        choices=["simple", "multi"],
+        default="simple",
+        help=(
+            "Retrieval strategy. "
+            "'simple' = direct similarity search. "
+            "'multi'  = LLM generates query variants, results are deduplicated. "
+            "(default: simple)"
+        ),
     )
 
     args = parser.parse_args()

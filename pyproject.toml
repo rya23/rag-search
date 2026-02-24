@@ -9,6 +9,7 @@ dependencies = [
     "chromadb>=1.5.1",
     "ipython>=9.9.0",
     "langchain-chroma>=1.1.0",
+    "langchain-classic>=1.0.1",
     "langchain-community>=0.4.1",
     "langchain-experimental>=0.4.1",
     "langchain-groq>=1.1.1",
