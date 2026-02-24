@@ -52,14 +52,12 @@ def create_embeddings():
     )
 
 
-client = chromadb.CloudClient(
-    api_key=os.environ["CHROMA_API_KEY"],
-    tenant="f32850a7-db5b-4f37-8855-2129db742041",
-    database="10k_store",
-)
-
-
 def build_vectorstore(docs, embeddings):
+    client = chromadb.CloudClient(
+        api_key=os.environ["CHROMA_API_KEY"],
+        tenant="f32850a7-db5b-4f37-8855-2129db742041",
+        database="10k_store",
+    )
 
     vectorstore = Chroma(
         collection_name="langchain_store",
