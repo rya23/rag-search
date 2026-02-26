@@ -4,11 +4,6 @@ from io import StringIO
 from langchain_core.documents import Document
 
 
-# ===============================
-# STEP 2 — EXTRACT TABLES + SECTIONS
-# ===============================
-
-
 def extract_tables_with_sections(md_text):
     lines = md_text.split("\n")
     current_section = "Unknown Section"
@@ -32,11 +27,6 @@ def extract_tables_with_sections(md_text):
                 in_table = False
 
     return tables
-
-
-# ===============================
-# STEP 3 — MARKDOWN TABLE → DATAFRAME
-# ===============================
 
 
 def markdown_table_to_df(table_md):
@@ -63,11 +53,6 @@ def markdown_table_to_df(table_md):
     return df
 
 
-# ===============================
-# STEP 4 — NUMERIC NORMALIZATION
-# ===============================
-
-
 def normalize_numeric(x):
     if pd.isna(x):
         return None
@@ -86,11 +71,6 @@ def normalize_numeric(x):
         return float(x)
     except:
         return None
-
-
-# ===============================
-# MAIN ENTRY POINT
-# ===============================
 
 
 def run_extraction(filepath: str) -> list[Document]:
