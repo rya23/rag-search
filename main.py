@@ -6,7 +6,6 @@ def cmd_ingest(args):
     from cli.ingest import (
         load_markdown,
         split_markdown,
-        create_embeddings,
         build_vectorstore,
     )
 
@@ -18,8 +17,7 @@ def cmd_ingest(args):
     split_docs = split_markdown(documents)
     all_docs = split_docs + table_docs
     print(f"Split into {len(split_docs)} text chunks + {len(table_docs)} table row documents. Embedding and uploading...")
-    embeddings = create_embeddings()
-    build_vectorstore(all_docs, embeddings)
+    build_vectorstore(all_docs)
     print(f"Done. Indexed {len(all_docs)} total chunks.")
 
 

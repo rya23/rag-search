@@ -1,14 +1,9 @@
-import os
 from uuid import uuid4
-
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain_chroma import Chroma
-import chromadb
 from dotenv import load_dotenv
+from ..db.dependencies import get_embeddings, get_vectorstore
 
 load_dotenv()
 
@@ -45,25 +40,9 @@ def split_markdown(documents):
     return final_docs
 
 
-def create_embeddings():
-    return SentenceTransformerEmbeddings(
-        model_name="rya23/modernbert-embed-finance-matryoshka",
-        model_kwargs={"device": "cpu", "trust_remote_code": True},
-    )
-
-
-def build_vectorstore(docs, embeddings):
-    client = chromadb.CloudClient(
-        api_key=os.environ["CHROMA_API_KEY"],
-        tenant="f32850a7-db5b-4f37-8855-2129db742041",
-        database="10k_store",
-    )
-
-    vectorstore = Chroma(
-        collection_name="langchain_store",
-        embedding_function=embeddings,
-        client=client,
-    )
+def build_vectorstore(docs):
+    vectorstore = get_vectorstore()
+    embeddings = get_embeddings()
 
     # Optional sanity check
     test_vector = embeddings.embed_query("test")
@@ -87,8 +66,6 @@ if __name__ == "__main__":
 
     documents = load_markdown(file_path)
     split_docs = split_markdown(documents)
-
-    embeddings = create_embeddings()
-    vectorstore = build_vectorstore(split_docs, embeddings)
+    vectorstore = build_vectorstore(split_docs)
 
     print(f"Indexed {len(split_docs)} chunks.")
