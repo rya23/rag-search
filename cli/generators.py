@@ -1,12 +1,9 @@
-from typing import Callable
+from typing import Callable, Generator
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from .pipeline import PipelineState
-
-SYSTEM_PROMPT = """You are a helpful assistant. Answer the user's question using only the provided context.
-If the context does not contain enough information to answer, say so clearly.
-Be concise and accurate."""
+from prompts.system_prompt import SYSTEM_PROMPT
 
 
 def groq_generator(llm) -> Callable[[PipelineState], PipelineState]:
@@ -25,13 +22,18 @@ RETRIEVED INFORMATION:
 
 USER QUESTION: {state.query}
 
-Analyze the financial information step by step:
-1. Identify the key financial data points and metrics relevant to the question
-2. Examine the relationships between these data points
-3. Consider the broader market context and implications
-4. Formulate insights based on your analysis
 
-Reason through potential financial scenarios and implications before providing your final answer. Use ONLY information from the retrieved documents. If you encounter information gaps, acknowledge them explicitly.
+Based STRICTLY on the RETRIEVED INFORMATION above, provide a detailed financial analysis addressing the user's question. Include relevant metrics, trends, and financial insights from the documents.
+
+Instructions:
+
+* Cite all numerical values.
+* Specify fiscal years.
+* Show calculations if applicable.
+* Do not use external knowledge.
+* If insufficient information exists, explicitly state that.
+
+If the retrieved information doesn't contain sufficient data to answer the question, clearly state this limitation.
 """
             ),
         ]
@@ -41,5 +43,46 @@ Reason through potential financial scenarios and implications before providing y
             content = "\n".join(str(item) for item in content)
         state.answer = content
         return state
+
+    return generate
+
+
+def groq_stream_generator(llm) -> Callable[[PipelineState], Generator[str, None, None]]:
+    """Streams answer tokens from a Groq LLM using the retrieved docs."""
+
+    def generate(state: PipelineState) -> Generator[str, None, None]:
+        context = "\n\n---\n\n".join(doc.page_content for doc in state.docs)
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(
+                content=f"""
+You are a financial analysis assistant with expertise in market trends and financial data.
+
+RETRIEVED INFORMATION:
+{context}
+
+USER QUESTION: {state.query}
+
+
+Based STRICTLY on the RETRIEVED INFORMATION above, provide a detailed financial analysis addressing the user's question. Include relevant metrics, trends, and financial insights from the documents.
+
+Instructions:
+
+* Cite all numerical values.
+* Specify fiscal years.
+* Show calculations if applicable.
+* Do not use external knowledge.
+* If insufficient information exists, explicitly state that.
+
+If the retrieved information doesn't contain sufficient data to answer the question, clearly state this limitation.
+"""
+            ),
+        ]
+        for chunk in llm.stream(messages):
+            content = chunk.content
+            if isinstance(content, list):
+                content = "\n".join(str(item) for item in content)
+            if content:
+                yield content
 
     return generate

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Callable, List
+from typing import Callable, Generator, List, Union
 
 from langchain_core.documents import Document
 
@@ -28,6 +28,9 @@ class RAGPipeline:
         self._retriever: Callable[[PipelineState], PipelineState] | None = None
         self._steps: List[Callable[[PipelineState], PipelineState]] = []
         self._generator: Callable[[PipelineState], PipelineState] | None = None
+        self._stream_generator: (
+            Callable[[PipelineState], Generator[str, None, None]] | None
+        ) = None
 
     def set_retriever(
         self, fn: Callable[[PipelineState], PipelineState]
@@ -46,6 +49,13 @@ class RAGPipeline:
         self._generator = fn
         return self
 
+    def set_stream_generator(
+        self, fn: Callable[[PipelineState], Generator[str, None, None]]
+    ) -> "RAGPipeline":
+        """Set the generator for streaming. Returns self for chaining."""
+        self._stream_generator = fn
+        return self
+
     def run(self, query: str) -> str:
         if self._retriever is None:
             raise ValueError("No retriever set. Call set_retriever() before run().")
@@ -58,3 +68,19 @@ class RAGPipeline:
             state = step(state)
         state = self._generator(state)
         return state.answer
+
+    def stream_run(self, query: str) -> Generator[str, None, None]:
+        if self._retriever is None:
+            raise ValueError(
+                "No retriever set. Call set_retriever() before stream_run()."
+            )
+        if self._stream_generator is None:
+            raise ValueError(
+                "No stream generator set. Call set_stream_generator() before stream_run()."
+            )
+
+        state = PipelineState(query=query)
+        state = self._retriever(state)
+        for step in self._steps:
+            state = step(state)
+        yield from self._stream_generator(state)

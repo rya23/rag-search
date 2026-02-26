@@ -16,7 +16,9 @@ def cmd_ingest(args):
     documents = load_markdown(args.file)
     split_docs = split_markdown(documents)
     all_docs = split_docs + table_docs
-    print(f"Split into {len(split_docs)} text chunks + {len(table_docs)} table row documents. Embedding and uploading...")
+    print(
+        f"Split into {len(split_docs)} text chunks + {len(table_docs)} table row documents. Embedding and uploading..."
+    )
     build_vectorstore(all_docs)
     print(f"Done. Indexed {len(all_docs)} total chunks.")
 
@@ -28,8 +30,10 @@ def cmd_query(args):
     pipeline = build_pipeline(mode=args.retriever, k=args.k)
 
     if args.question:
-        answer = pipeline.run(args.question)
-        print(answer)
+        print("Assistant: ", end="", flush=True)
+        for chunk in pipeline.stream_run(args.question):
+            print(chunk, end="", flush=True)
+        print()  # newline at end
     else:
         print("RAG query mode. Type 'exit' or Ctrl-C to quit.\n")
         while True:
@@ -42,8 +46,10 @@ def cmd_query(args):
                 continue
             if question.lower() in ("exit", "quit"):
                 break
-            answer = pipeline.run(question)
-            print(f"Assistant: {answer}\n")
+            print("Assistant: ", end="", flush=True)
+            for chunk in pipeline.stream_run(question):
+                print(chunk, end="", flush=True)
+            print(f"\n")  # newline at end
 
 
 def main():
