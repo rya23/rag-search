@@ -2,6 +2,7 @@ import argparse
 
 
 def cmd_ingest(args):
+    from cli.preprocess_tables import run_extraction
     from cli.ingest import (
         load_markdown,
         split_markdown,
@@ -9,13 +10,17 @@ def cmd_ingest(args):
         build_vectorstore,
     )
 
+    print(f"Extracting tables from {args.file}...")
+    table_docs = run_extraction(args.file)
+
     print(f"Loading {args.file}...")
     documents = load_markdown(args.file)
     split_docs = split_markdown(documents)
-    print(f"Split into {len(split_docs)} chunks. Embedding and uploading...")
+    all_docs = split_docs + table_docs
+    print(f"Split into {len(split_docs)} text chunks + {len(table_docs)} table row documents. Embedding and uploading...")
     embeddings = create_embeddings()
-    build_vectorstore(split_docs, embeddings)
-    print(f"Done. Indexed {len(split_docs)} chunks.")
+    build_vectorstore(all_docs, embeddings)
+    print(f"Done. Indexed {len(all_docs)} total chunks.")
 
 
 def cmd_query(args):
@@ -59,7 +64,8 @@ def main():
     # query subcommand
     query_parser = subparsers.add_parser("query", help="Query the RAG pipeline.")
     query_parser.add_argument(
-        "-q", "--question",
+        "-q",
+        "--question",
         help="Single question to ask. If omitted, starts an interactive loop.",
         default=None,
     )

@@ -13,3 +13,5 @@ wheels/
 *.pdf
 .env
 data/
+*.docx
+archived/
