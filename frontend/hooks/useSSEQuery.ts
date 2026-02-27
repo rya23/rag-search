@@ -11,6 +11,7 @@ interface UseSSEQueryState {
   traceId: string | null;
   threadId: string | null;
   nodeProgress: NodeProgress[];
+  retrievalMethod: string | null;
 }
 
 interface UseSSEQueryReturn extends UseSSEQueryState {
@@ -26,6 +27,7 @@ export function useSSEQuery(): UseSSEQueryReturn {
     traceId: null,
     threadId: null,
     nodeProgress: [],
+    retrievalMethod: null,
   });
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -42,6 +44,7 @@ export function useSSEQuery(): UseSSEQueryReturn {
       traceId: null,
       threadId: null,
       nodeProgress: [],
+      retrievalMethod: null,
     });
     currentMessageRef.current = "";
   }, []);
@@ -68,6 +71,7 @@ export function useSSEQuery(): UseSSEQueryReturn {
         isStreaming: true,
         error: null,
         nodeProgress: [],
+        retrievalMethod: null,
       }));
 
       currentMessageRef.current = "";
@@ -105,6 +109,10 @@ export function useSSEQuery(): UseSSEQueryReturn {
                   },
                 ],
               }));
+              break;
+
+            case "retrieval_method":
+              setState((prev) => ({ ...prev, retrievalMethod: event.data }));
               break;
 
             case "token":

@@ -74,15 +74,20 @@ export default function TracesPage() {
                     <div className="flex items-center gap-2">
                       <Badge
                         variant={
-                          trace.status === "completed"
+                          trace.status === "completed" || trace.status === "complete"
                             ? "default"
-                            : trace.status === "failed"
+                            : trace.status === "failed" || trace.status === "error"
                             ? "destructive"
                             : "secondary"
                         }
                       >
                         {trace.status}
                       </Badge>
+                      {(trace.retriever_mode || trace.mode) && (
+                        <Badge variant="outline">
+                          {(trace.retriever_mode || trace.mode).replace("_", " ")}
+                        </Badge>
+                      )}
                       {trace.total_ms && (
                         <Badge variant="outline">{trace.total_ms}ms</Badge>
                       )}

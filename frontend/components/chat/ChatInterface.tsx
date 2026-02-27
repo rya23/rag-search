@@ -20,7 +20,7 @@ export function ChatInterface() {
   const [k, setK] = useState(DEFAULT_K);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { messages, isStreaming, error, traceId, threadId, nodeProgress, sendQuery, reset } =
+  const { messages, isStreaming, error, traceId, threadId, nodeProgress, retrievalMethod, sendQuery, reset } =
     useSSEQuery();
 
   // Auto-scroll to bottom when new messages arrive
@@ -54,6 +54,11 @@ export function ChatInterface() {
                 View Traces
               </Button>
             </Link>
+            {retrievalMethod && (
+              <Badge variant="secondary" className="text-xs">
+                {retrievalMethod === "simple_retrieve" ? "Simple" : "Multi-Query"} Retrieval
+              </Badge>
+            )}
             {threadId && (
               <Badge variant="outline" className="font-mono text-xs">
                 Thread: {threadId.slice(0, 8)}...

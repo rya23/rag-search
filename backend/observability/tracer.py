@@ -237,6 +237,15 @@ class TraceStore:
             trace.completed_at = datetime.now(tz=timezone.utc)
             await session.commit()
 
+    async def update_trace_mode(self, trace_id: str, retriever_mode: str):
+        """Update the retriever_mode field of a trace."""
+        async with self._session() as session:
+            trace = await session.get(RagTrace, _uuid.UUID(trace_id))
+            if trace is None:
+                raise ValueError(f"RagTrace {trace_id} not found")
+            trace.retriever_mode = retriever_mode
+            await session.commit()
+
     async def list_traces(self, limit: int = 50) -> list[dict]:
         async with self._session() as session:
             stmt = (

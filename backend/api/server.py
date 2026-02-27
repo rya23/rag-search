@@ -143,6 +143,9 @@ async def _sse_events_langgraph(
         retriever_ms = 0
         generator_ms = 0
         docs = []
+        retrieval_method = ""
+        multiquery_steps = None
+        final_state = None
 
         # Track timing
         t_retrieval = None
@@ -154,6 +157,9 @@ async def _sse_events_langgraph(
                 # Emit node execution event
                 yield _sse({"type": "node", "data": node_name})
 
+                # Store final state
+                final_state = node_state
+
                 # Track timing and extract data
                 if node_name == "analyze_query":
                     pass  # Just analysis, no timing needed
@@ -162,9 +168,14 @@ async def _sse_events_langgraph(
                     if t_retrieval is None:
                         t_retrieval = time.perf_counter()
 
-                    # Extract docs
+                    # Extract docs and retrieval method
                     docs = node_state.get("docs", [])
+                    retrieval_method = node_state.get("retrieval_method", node_name)
+                    multiquery_steps = node_state.get("multiquery_steps")
                     retriever_ms = int((time.perf_counter() - t_retrieval) * 1000)
+
+                    # Emit retrieval method
+                    yield _sse({"type": "retrieval_method", "data": retrieval_method})
 
                 elif node_name == "generate_answer":
                     if t_generation is None:
@@ -183,12 +194,26 @@ async def _sse_events_langgraph(
         if docs:
             await store.save_docs(trace_id, docs, retriever_ms)
 
+        # Save multi-query steps if available
+        if multiquery_steps is not None:
+            mqs = multiquery_steps
+            await store.save_multiquery_steps(
+                trace_id,
+                mqs.prompt_sent,
+                mqs.generated_queries,
+                mqs.per_query_docs,
+            )
+
         # Calculate total time
         total_ms = int((time.perf_counter() - t_start) * 1000)
         full_response = "".join(response_chunks)
 
-        # Complete the trace
+        # Update trace with retrieval method
         await store.complete_trace(trace_id, full_response, generator_ms, total_ms)
+
+        # Update the mode field to reflect actual retrieval method
+        if retrieval_method:
+            await store.update_trace_mode(trace_id, retrieval_method)
 
         yield _sse({"type": "done"})
 
@@ -416,8 +441,12 @@ async def get_trace(trace_id: str):
     if trace is None:
         raise HTTPException(status_code=404, detail="Trace not found")
     docs = await store.get_docs(trace_id)
+    multiquery_steps = await store.get_multiquery_steps(trace_id)
+
     result = _serialize_row(trace)
     result["docs"] = docs
+    if multiquery_steps:
+        result["multiquery_steps"] = multiquery_steps
     return result
 
 

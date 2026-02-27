@@ -10,6 +10,7 @@ export type SSEEvent =
   | { type: "trace_id"; data: string }
   | { type: "thread_id"; data: string }
   | { type: "node"; data: string }
+  | { type: "retrieval_method"; data: string }
   | { type: "token"; data: string }
   | { type: "error"; data: string }
   | { type: "done" };
@@ -27,6 +28,7 @@ export interface Trace {
   trace_id: string;
   query: string;
   mode: string;
+  retriever_mode?: string; // Actual retrieval method used
   k: number;
   created_at: string;
   response?: string;
@@ -34,11 +36,30 @@ export interface Trace {
   retriever_ms?: number;
   generator_ms?: number;
   total_ms?: number;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "in_progress" | "complete" | "error";
+}
+
+export interface MultiQueryDoc {
+  position: number;
+  content: string;
+  metadata: Record<string, any>;
+}
+
+export interface PerQueryDocs {
+  query_index: number;
+  generated_query: string;
+  docs: MultiQueryDoc[];
+}
+
+export interface MultiQuerySteps {
+  prompt_sent: string;
+  generated_queries: string[];
+  per_query_docs: PerQueryDocs[];
 }
 
 export interface TraceDetail extends Trace {
   docs?: RetrievedDocument[];
+  multiquery_steps?: MultiQuerySteps;
 }
 
 export interface RetrievedDocument {
