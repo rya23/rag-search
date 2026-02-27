@@ -52,6 +52,13 @@ def cmd_query(args):
             print(f"\n")  # newline at end
 
 
+def cmd_serve(args):
+    import uvicorn
+
+    print(f"Starting observability API on http://{args.host}:{args.port}")
+    uvicorn.run("api.server:app", host=args.host, port=args.port, reload=args.reload)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="rag",
@@ -91,12 +98,28 @@ def main():
         ),
     )
 
+    # serve subcommand
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start the observability API server."
+    )
+    serve_parser.add_argument(
+        "--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)"
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=8000, help="Bind port (default: 8000)"
+    )
+    serve_parser.add_argument(
+        "--reload", action="store_true", help="Enable auto-reload for development."
+    )
+
     args = parser.parse_args()
 
     if args.command == "ingest":
         cmd_ingest(args)
     elif args.command == "query":
         cmd_query(args)
+    elif args.command == "serve":
+        cmd_serve(args)
 
 
 if __name__ == "__main__":

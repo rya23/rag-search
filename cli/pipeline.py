@@ -5,10 +5,21 @@ from langchain_core.documents import Document
 
 
 @dataclass
+class MultiQueryStep:
+    """Observability data produced by the multi-query retriever."""
+
+    prompt_sent: str
+    generated_queries: List[str]
+    # Each entry: {"query": str, "docs": List[Document]}
+    per_query_docs: List[dict] = field(default_factory=list)
+
+
+@dataclass
 class PipelineState:
     query: str
     docs: List[Document] = field(default_factory=list)
     answer: str = ""
+    multiquery_steps: "MultiQueryStep | None" = None
 
 
 class RAGPipeline:
