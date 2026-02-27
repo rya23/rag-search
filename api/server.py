@@ -4,12 +4,24 @@ RAG Observability API
 Endpoints:
 
   POST /api/query
-    Body: { "query": str, "mode": "simple"|"multi", "k": int }
+    Body: { "query": str, "k": int, "thread_id": str? }
     Response: SSE stream
       - {"type":"trace_id", "data":"<uuid>"}   first event
+      - {"type":"node",      "data":"<node_name>"} node execution start
       - {"type":"token",    "data":"..."}       one per LLM token
       - {"type":"error",    "data":"..."}       on failure
       - {"type":"done"}                         final event
+
+    Note: Uses LangGraph with automatic query routing.
+    The 'mode' parameter is deprecated (routing is now automatic).
+    Provide 'thread_id' to continue a conversation.
+
+  POST /api/conversation
+    Body: { "query": str, "thread_id": str?, "k": int? }
+    Response: SSE stream (same as /api/query)
+
+    Creates or continues a conversation. If thread_id is not provided,
+    a new conversation thread is created.
 
   GET  /api/traces?limit=50
     Returns list of recent traces (summary).
@@ -52,8 +64,9 @@ app = FastAPI(title="RAG Observability API")
 
 class QueryRequest(BaseModel):
     query: str
-    mode: str = "simple"
     k: int = 5
+    thread_id: str | None = None  # for conversation continuity
+    mode: str | None = None  # deprecated, kept for backward compatibility
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +74,139 @@ class QueryRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+async def _sse_events_langgraph(
+    trace_id: str,
+    query: str,
+    k: int,
+    thread_id: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """Async generator that drives the LangGraph RAG pipeline and yields SSE lines."""
+    from langchain_core.messages import HumanMessage
+    from langchain_core.runnables import RunnableConfig
+
+    from cli.langgraph_pipeline import build_rag_graph, generate_thread_id
+    from observability.tracer import get_trace_store
+
+    store = await get_trace_store()
+    t_start = time.perf_counter()
+
+    # Generate thread_id if not provided
+    if thread_id is None:
+        thread_id = generate_thread_id()
+
+    # -- emit trace_id and thread_id immediately --
+    yield _sse({"type": "trace_id", "data": trace_id})
+    yield _sse({"type": "thread_id", "data": thread_id})
+
+    # -- create the trace record (mode is "auto" for LangGraph) --
+    await store.create_trace(trace_id, query, "auto", k, time.time())
+
+    try:
+        # Build the graph with checkpointing enabled for conversations
+        graph = await build_rag_graph(with_checkpointing=(thread_id is not None))
+
+        # Prepare initial state
+        initial_state = {
+            "query": query,
+            "messages": [HumanMessage(content=query)],
+            "k": k,
+            "query_complexity": "",
+            "query_length": 0,
+            "has_complex_keywords": False,
+            "docs": [],
+            "retrieval_method": "",
+            "retrieval_attempts": 0,
+            "answer": "",
+            "multiquery_steps": None,
+            "steps_taken": [],
+        }
+
+        config: RunnableConfig = {}
+        if thread_id:
+            config["configurable"] = {"thread_id": thread_id}
+
+        # Collect response for tracing
+        response_chunks: list[str] = []
+        retriever_ms = 0
+        generator_ms = 0
+        docs = []
+
+        # Track timing
+        t_retrieval = None
+        t_generation = None
+
+        # Stream node execution
+        async for event in graph.astream(initial_state, config=config):
+            for node_name, node_state in event.items():
+                # Emit node execution event
+                yield _sse({"type": "node", "data": node_name})
+
+                # Track timing and extract data
+                if node_name == "analyze_query":
+                    pass  # Just analysis, no timing needed
+
+                elif node_name in ["simple_retrieve", "multi_query_retrieve"]:
+                    if t_retrieval is None:
+                        t_retrieval = time.perf_counter()
+
+                    # Extract docs
+                    docs = node_state.get("docs", [])
+                    retriever_ms = int((time.perf_counter() - t_retrieval) * 1000)
+
+                elif node_name == "generate_answer":
+                    if t_generation is None:
+                        t_generation = time.perf_counter()
+
+                    # Extract answer (note: not streaming tokens in this implementation)
+                    answer = node_state.get("answer", "")
+                    if answer:
+                        response_chunks = [answer]
+                        # Emit the complete answer as a single "token"
+                        yield _sse({"type": "token", "data": answer})
+
+                    generator_ms = int((time.perf_counter() - t_generation) * 1000)
+
+        # Save retrieved docs + timing
+        if docs:
+            await store.save_docs(trace_id, docs, retriever_ms)
+
+        # Calculate total time
+        total_ms = int((time.perf_counter() - t_start) * 1000)
+        full_response = "".join(response_chunks)
+
+        # Complete the trace
+        await store.complete_trace(trace_id, full_response, generator_ms, total_ms)
+
+        yield _sse({"type": "done"})
+
+    except Exception as exc:
+        import traceback
+
+        error_details = f"{exc}\n{traceback.format_exc()}"
+        await store.fail_trace(trace_id, error_details)
+        yield _sse({"type": "error", "data": str(exc)})
+        yield _sse({"type": "done"})
+
+    # except Exception as exc:
+    #     import traceback
+
+    #     error_details = f"{exc}\n{traceback.format_exc()}"
+    #     await store.fail_trace(trace_id, error_details)
+    #     yield _sse({"type": "error", "data": str(exc)})
+    #     yield _sse({"type": "done"})
+
+    # except Exception as exc:
+    #     await store.fail_trace(trace_id, str(exc))
+    #     yield _sse({"type": "error", "data": str(exc)})
+    #     yield _sse({"type": "done"})
+
+
 def _run_retrieval(query: str, mode: str, k: int):
-    """Synchronous retrieval step; returns (state, retriever_ms)."""
+    """Synchronous retrieval step; returns (state, retriever_ms).
+
+    DEPRECATED: Legacy function for backward compatibility.
+    New code should use LangGraph pipeline.
+    """
     from cli.pipeline import PipelineState
     from cli.retrievers import multi_query_retriever, simple_retriever
     from db.dependencies import get_llm, get_vectorstore
@@ -90,7 +234,11 @@ async def _sse_events(
     mode: str,
     k: int,
 ) -> AsyncGenerator[str, None]:
-    """Async generator that drives the full traced RAG pipeline and yields SSE lines."""
+    """Async generator that drives the full traced RAG pipeline and yields SSE lines.
+
+    DEPRECATED: Legacy function for backward compatibility.
+    New code should use _sse_events_langgraph.
+    """
     from cli.generators import groq_stream_generator
     from db.dependencies import get_llm
     from observability.tracer import get_trace_store
@@ -179,18 +327,59 @@ def _sse(data: dict) -> str:
 
 @app.post("/api/query")
 async def query_endpoint(req: QueryRequest) -> StreamingResponse:
-    if req.mode not in ("simple", "multi"):
-        raise HTTPException(status_code=400, detail="mode must be 'simple' or 'multi'")
+    """
+    Query endpoint with automatic routing (LangGraph).
+
+    The 'mode' parameter is deprecated - routing is now automatic.
+    Provide 'thread_id' to continue a conversation.
+    """
     if req.k < 1:
         raise HTTPException(status_code=400, detail="k must be >= 1")
 
+    # Backward compatibility: if mode is provided, log a warning
+    if req.mode is not None:
+        import logging
+
+        logging.warning(
+            f"'mode' parameter is deprecated and ignored. Query routing is now automatic."
+        )
+
     trace_id = str(uuid.uuid4())
+
+    # Use LangGraph implementation
     return StreamingResponse(
-        _sse_events(trace_id, req.query, req.mode, req.k),
+        _sse_events_langgraph(trace_id, req.query, req.k, req.thread_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # disable nginx buffering
+        },
+    )
+
+
+@app.post("/api/conversation")
+async def conversation_endpoint(req: QueryRequest) -> StreamingResponse:
+    """
+    Conversation endpoint with thread management.
+
+    If thread_id is not provided, a new conversation is created.
+    Otherwise, the conversation continues in the existing thread.
+    """
+    if req.k < 1:
+        raise HTTPException(status_code=400, detail="k must be >= 1")
+
+    from cli.langgraph_pipeline import generate_thread_id
+
+    # Generate thread_id if not provided
+    thread_id = req.thread_id or generate_thread_id()
+    trace_id = str(uuid.uuid4())
+
+    return StreamingResponse(
+        _sse_events_langgraph(trace_id, req.query, req.k, thread_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
         },
     )
 

@@ -25,4 +25,5 @@ dependencies = [
     "sentence-transformers>=5.2.3",
     "transformers==5.0.0",
     "uvicorn[standard]>=0.30.0",
+    "langgraph-checkpoint-postgres>=3.0.4",
 ]

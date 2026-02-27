@@ -25,9 +25,23 @@ def cmd_ingest(args):
 
 def cmd_query(args):
     from cli.query import build_pipeline
+    from cli.langgraph_pipeline import generate_thread_id
 
-    print(f"Initializing pipeline (retriever={args.retriever}, k={args.k})...")
-    pipeline = build_pipeline(mode=args.retriever, k=args.k)
+    # Generate a thread ID for this session (enables conversation continuity)
+    thread_id = generate_thread_id() if args.conversation else None
+
+    if thread_id:
+        print(f"Starting conversation (thread: {thread_id[:8]}...)")
+        print("Note: Follow-up questions will use conversation context.\n")
+
+    print(f"Initializing LangGraph pipeline (auto-routing, k={args.k})...")
+    # Enable checkpointing when conversation mode is active
+    pipeline = build_pipeline(
+        mode=args.retriever, k=args.k, with_checkpointing=args.conversation
+    )
+
+    if thread_id:
+        pipeline.set_thread_id(thread_id)
 
     if args.question:
         print("Assistant: ", end="", flush=True)
@@ -49,7 +63,7 @@ def cmd_query(args):
             print("Assistant: ", end="", flush=True)
             for chunk in pipeline.stream_run(question):
                 print(chunk, end="", flush=True)
-            print(f"\n")  # newline at end
+            print("\n")  # newline at end
 
 
 def cmd_serve(args):
@@ -91,11 +105,14 @@ def main():
         choices=["simple", "multi"],
         default="simple",
         help=(
-            "Retrieval strategy. "
-            "'simple' = direct similarity search. "
-            "'multi'  = LLM generates query variants, results are deduplicated. "
-            "(default: simple)"
+            "[DEPRECATED] Retrieval strategy now determined automatically by query analysis. "
+            "This flag is kept for backward compatibility but is ignored."
         ),
+    )
+    query_parser.add_argument(
+        "--conversation",
+        action="store_true",
+        help="Enable multi-turn conversation mode with context retention.",
     )
 
     # serve subcommand
