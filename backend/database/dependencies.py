@@ -46,4 +46,5 @@ def get_llm() -> ChatGroq:
     return ChatGroq(
         model=LLM_MODEL,
         api_key=SecretStr(os.environ["GROQ_API_KEY"]),
+        streaming=True,
     )

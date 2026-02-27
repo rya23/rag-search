@@ -3,7 +3,7 @@ from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
-from ..db.dependencies import get_embeddings, get_vectorstore
+from ..database.dependencies import get_embeddings, get_vectorstore
 
 load_dotenv()
 

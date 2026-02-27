@@ -85,7 +85,7 @@ def simple_retrieve(state: RAGState) -> dict:
 
     Directly searches the vector store for k most similar documents.
     """
-    from db.dependencies import get_vectorstore
+    from database.dependencies import get_vectorstore
 
     vectorstore = get_vectorstore()
     k = state.get("k", 5)
@@ -110,7 +110,7 @@ def multi_query_retrieve(state: RAGState) -> dict:
     Uses an LLM to generate semantically distinct query reformulations,
     searches for each, and returns deduplicated results.
     """
-    from db.dependencies import get_llm, get_vectorstore
+    from database.dependencies import get_llm, get_vectorstore
 
     vectorstore = get_vectorstore()
     llm = get_llm()
@@ -172,7 +172,7 @@ def generate_answer(state: RAGState) -> dict:
 
     Non-streaming version.
     """
-    from db.dependencies import get_llm
+    from database.dependencies import get_llm
 
     llm = get_llm()
 
@@ -227,7 +227,7 @@ def generate_answer_stream(state: RAGState) -> Generator[str, None, None]:
 
     Yields answer tokens as they are generated.
     """
-    from db.dependencies import get_llm
+    from database.dependencies import get_llm
 
     llm = get_llm()
 

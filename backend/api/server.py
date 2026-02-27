@@ -145,50 +145,63 @@ async def _sse_events_langgraph(
         docs = []
         retrieval_method = ""
         multiquery_steps = None
-        final_state = None
 
         # Track timing
         t_retrieval = None
         t_generation = None
 
-        # Stream node execution
-        async for event in graph.astream(initial_state, config=config):
-            for node_name, node_state in event.items():
-                # Emit node execution event
-                yield _sse({"type": "node", "data": node_name})
+        _RAG_NODES = {
+            "analyze_query",
+            "simple_retrieve",
+            "multi_query_retrieve",
+            "generate_answer",
+        }
+        _emitted_nodes: set[str] = set()
 
-                # Store final state
-                final_state = node_state
+        # Stream events including LLM token-level streaming
+        async for event in graph.astream_events(
+            initial_state, config=config, version="v2"
+        ):
+            ev_type = event["event"]
+            ev_name = event.get("name", "")
 
-                # Track timing and extract data
-                if node_name == "analyze_query":
-                    pass  # Just analysis, no timing needed
+            if ev_type == "on_chain_start" and ev_name in _RAG_NODES:
+                if ev_name not in _emitted_nodes:
+                    _emitted_nodes.add(ev_name)
+                    yield _sse({"type": "node", "data": ev_name})
 
-                elif node_name in ["simple_retrieve", "multi_query_retrieve"]:
-                    if t_retrieval is None:
-                        t_retrieval = time.perf_counter()
+                if (
+                    ev_name in ("simple_retrieve", "multi_query_retrieve")
+                    and t_retrieval is None
+                ):
+                    t_retrieval = time.perf_counter()
+                elif ev_name == "generate_answer" and t_generation is None:
+                    t_generation = time.perf_counter()
 
-                    # Extract docs and retrieval method
-                    docs = node_state.get("docs", [])
-                    retrieval_method = node_state.get("retrieval_method", node_name)
-                    multiquery_steps = node_state.get("multiquery_steps")
+            elif ev_type == "on_chain_end" and ev_name in (
+                "simple_retrieve",
+                "multi_query_retrieve",
+            ):
+                output = event.get("data", {}).get("output", {}) or {}
+                docs = output.get("docs", [])
+                retrieval_method = output.get("retrieval_method", ev_name)
+                multiquery_steps = output.get("multiquery_steps")
+                if t_retrieval is not None:
                     retriever_ms = int((time.perf_counter() - t_retrieval) * 1000)
+                yield _sse({"type": "retrieval_method", "data": retrieval_method})
 
-                    # Emit retrieval method
-                    yield _sse({"type": "retrieval_method", "data": retrieval_method})
-
-                elif node_name == "generate_answer":
-                    if t_generation is None:
-                        t_generation = time.perf_counter()
-
-                    # Extract answer (note: not streaming tokens in this implementation)
-                    answer = node_state.get("answer", "")
-                    if answer:
-                        response_chunks = [answer]
-                        # Emit the complete answer as a single "token"
-                        yield _sse({"type": "token", "data": answer})
-
+            elif ev_type == "on_chain_end" and ev_name == "generate_answer":
+                if t_generation is not None:
                     generator_ms = int((time.perf_counter() - t_generation) * 1000)
+
+            elif ev_type == "on_chat_model_stream":
+                chunk = event["data"]["chunk"]
+                content = chunk.content
+                if isinstance(content, list):
+                    content = "\n".join(str(item) for item in content)
+                if content:
+                    response_chunks.append(content)
+                    yield _sse({"type": "token", "data": content})
 
         # Save retrieved docs + timing
         if docs:
@@ -225,19 +238,6 @@ async def _sse_events_langgraph(
         yield _sse({"type": "error", "data": str(exc)})
         yield _sse({"type": "done"})
 
-    # except Exception as exc:
-    #     import traceback
-
-    #     error_details = f"{exc}\n{traceback.format_exc()}"
-    #     await store.fail_trace(trace_id, error_details)
-    #     yield _sse({"type": "error", "data": str(exc)})
-    #     yield _sse({"type": "done"})
-
-    # except Exception as exc:
-    #     await store.fail_trace(trace_id, str(exc))
-    #     yield _sse({"type": "error", "data": str(exc)})
-    #     yield _sse({"type": "done"})
-
 
 def _run_retrieval(query: str, mode: str, k: int):
     """Synchronous retrieval step; returns (state, retriever_ms).
@@ -247,7 +247,7 @@ def _run_retrieval(query: str, mode: str, k: int):
     """
     from cli.pipeline import PipelineState
     from cli.retrievers import multi_query_retriever, simple_retriever
-    from db.dependencies import get_llm, get_vectorstore
+    from database.dependencies import get_llm, get_vectorstore
 
     llm = get_llm()
     vs = get_vectorstore()
@@ -278,7 +278,7 @@ async def _sse_events(
     New code should use _sse_events_langgraph.
     """
     from cli.generators import groq_stream_generator
-    from db.dependencies import get_llm
+    from database.dependencies import get_llm
     from observability.tracer import get_trace_store
 
     store = await get_trace_store()
