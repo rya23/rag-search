@@ -1,0 +1,17 @@
+{
+  "name": "rag-search-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "bun --filter frontend dev",
+    "dev:backend": "cd backend && source .venv/bin/activate && python main.py serve --reload",
+    "build": "bun --filter frontend build",
+    "start": "bun --filter frontend start",
+    "lint": "bun --filter frontend lint",
+    "backend:ingest": "cd backend && source .venv/bin/activate && python main.py ingest",
+    "backend:query": "cd backend && source .venv/bin/activate && python main.py query"
+  }
+}
