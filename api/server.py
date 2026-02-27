@@ -95,39 +95,31 @@ async def _sse_events(
     from db.dependencies import get_llm
     from observability.tracer import get_trace_store
 
-    store = get_trace_store()
+    store = await get_trace_store()
     t_start = time.perf_counter()
 
     # -- emit trace_id immediately so the client can link the stream --
     yield _sse({"type": "trace_id", "data": trace_id})
 
     # -- create the trace record --
-    await asyncio.to_thread(
-        store.create_trace,
-        trace_id,
-        query,
-        mode,
-        k,
-        time.time(),
-    )
+    await store.create_trace(trace_id, query, mode, k, time.time())
 
     # -- retrieval (blocking, run in threadpool) --
     try:
         state, retriever_ms = await asyncio.to_thread(_run_retrieval, query, mode, k)
     except Exception as exc:
-        await asyncio.to_thread(store.fail_trace, trace_id, str(exc))
+        await store.fail_trace(trace_id, str(exc))
         yield _sse({"type": "error", "data": str(exc)})
         yield _sse({"type": "done"})
         return
 
     # -- save retrieved docs + timing --
-    await asyncio.to_thread(store.save_docs, trace_id, state.docs, retriever_ms)
+    await store.save_docs(trace_id, state.docs, retriever_ms)
 
     # -- save multi-query internals if applicable --
     if state.multiquery_steps is not None:
         mqs = state.multiquery_steps
-        await asyncio.to_thread(
-            store.save_multiquery_steps,
+        await store.save_multiquery_steps(
             trace_id,
             mqs.prompt_sent,
             mqs.generated_queries,
@@ -155,11 +147,11 @@ async def _sse_events(
 
     while True:
         kind, data = await queue.get()
-        if kind == "token":
+        if kind == "token" and data is not None:
             response_chunks.append(data)
             yield _sse({"type": "token", "data": data})
         elif kind == "error":
-            await asyncio.to_thread(store.fail_trace, trace_id, data or "unknown error")
+            await store.fail_trace(trace_id, data or "unknown error")
             yield _sse({"type": "error", "data": data})
             yield _sse({"type": "done"})
             return
@@ -170,13 +162,7 @@ async def _sse_events(
     total_ms = int((time.perf_counter() - t_start) * 1000)
     full_response = "".join(response_chunks)
 
-    await asyncio.to_thread(
-        store.complete_trace,
-        trace_id,
-        full_response,
-        generator_ms,
-        total_ms,
-    )
+    await store.complete_trace(trace_id, full_response, generator_ms, total_ms)
 
     yield _sse({"type": "done"})
 
@@ -213,8 +199,8 @@ async def query_endpoint(req: QueryRequest) -> StreamingResponse:
 async def list_traces(limit: int = 50):
     from observability.tracer import get_trace_store
 
-    store = get_trace_store()
-    rows = await asyncio.to_thread(store.list_traces, limit)
+    store = await get_trace_store()
+    rows = await store.list_traces(limit)
     # make datetime objects JSON-serialisable
     return [_serialize_row(r) for r in rows]
 
@@ -223,11 +209,11 @@ async def list_traces(limit: int = 50):
 async def get_trace(trace_id: str):
     from observability.tracer import get_trace_store
 
-    store = get_trace_store()
-    trace = await asyncio.to_thread(store.get_trace, trace_id)
+    store = await get_trace_store()
+    trace = await store.get_trace(trace_id)
     if trace is None:
         raise HTTPException(status_code=404, detail="Trace not found")
-    docs = await asyncio.to_thread(store.get_docs, trace_id)
+    docs = await store.get_docs(trace_id)
     result = _serialize_row(trace)
     result["docs"] = docs
     return result
@@ -237,11 +223,11 @@ async def get_trace(trace_id: str):
 async def get_trace_docs(trace_id: str):
     from observability.tracer import get_trace_store
 
-    store = get_trace_store()
-    trace = await asyncio.to_thread(store.get_trace, trace_id)
+    store = await get_trace_store()
+    trace = await store.get_trace(trace_id)
     if trace is None:
         raise HTTPException(status_code=404, detail="Trace not found")
-    docs = await asyncio.to_thread(store.get_docs, trace_id)
+    docs = await store.get_docs(trace_id)
     return docs
 
 
@@ -249,11 +235,11 @@ async def get_trace_docs(trace_id: str):
 async def get_multiquery_steps(trace_id: str):
     from observability.tracer import get_trace_store
 
-    store = get_trace_store()
-    trace = await asyncio.to_thread(store.get_trace, trace_id)
+    store = await get_trace_store()
+    trace = await store.get_trace(trace_id)
     if trace is None:
         raise HTTPException(status_code=404, detail="Trace not found")
-    steps = await asyncio.to_thread(store.get_multiquery_steps, trace_id)
+    steps = await store.get_multiquery_steps(trace_id)
     if steps is None:
         raise HTTPException(
             status_code=404,
@@ -272,6 +258,8 @@ def _serialize_row(row: dict) -> dict:
     for k, v in row.items():
         if hasattr(v, "isoformat"):
             out[k] = v.isoformat()
+        elif isinstance(v, uuid.UUID):
+            out[k] = str(v)
         else:
             out[k] = v
     return out
