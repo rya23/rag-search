@@ -4,6 +4,9 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Generator, List
 
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+
 
 @dataclass
 class MultiQueryStep:
@@ -14,46 +17,70 @@ class MultiQueryStep:
     per_query_docs: List[dict] = field(default_factory=list)
 
 
+def _build_initial_state(query: str, k: int) -> dict:
+    return {
+        "query": query,
+        "messages": [HumanMessage(content=query)],
+        "k": k,
+        "query_complexity": "",
+        "query_length": 0,
+        "has_complex_keywords": False,
+        "docs": [],
+        "retrieval_method": "",
+        "retrieval_attempts": 0,
+        "answer": "",
+        "multiquery_steps": None,
+        "steps_taken": [],
+    }
+
+
 class RAGPipeline:
     def __init__(self, k: int = 5, with_checkpointing: bool = False):
         self.k = k
-        self.with_checkpointing = with_checkpointing
-        self._graph = None
         self._thread_id: str | None = None
 
-    def _ensure_graph(self):
-        if self._graph is None:
-            from cli.langgraph_pipeline import build_rag_graph
+        # Load deps and build graph here (sync context, no running event loop yet)
+        from database.dependencies import get_llm, get_vectorstore
+        from cli.langgraph_pipeline import build_rag_graph
 
-            self._graph = asyncio.run(build_rag_graph(self.with_checkpointing))
-        return self._graph
+        vectorstore = get_vectorstore()
+        llm = get_llm()
+        self._graph = asyncio.run(build_rag_graph(vectorstore, llm, with_checkpointing))
 
     def set_thread_id(self, thread_id: str) -> "RAGPipeline":
         self._thread_id = thread_id
         return self
 
-    def run(self, query: str) -> str:
-        from cli.langgraph_pipeline import run_query
+    def _make_config(self) -> RunnableConfig:
+        config: RunnableConfig = {}
+        if self._thread_id:
+            config["configurable"] = {"thread_id": self._thread_id}
+        return config
 
-        return asyncio.run(
-            run_query(
-                query=query,
-                k=self.k,
-                thread_id=self._thread_id,
-                with_checkpointing=self.with_checkpointing,
+    def run(self, query: str) -> str:
+        async def _run():
+            result = await self._graph.ainvoke(
+                _build_initial_state(query, self.k), config=self._make_config()
             )
-        )
+            return result["answer"]
+
+        return asyncio.run(_run())
 
     def stream_run(self, query: str) -> Generator[str, None, None]:
         async def _async_stream():
-            from cli.langgraph_pipeline import stream_query_with_tokens
-
-            async for event in stream_query_with_tokens(
-                query=query,
-                k=self.k,
-                thread_id=self._thread_id,
+            async for event in self._graph.astream_events(
+                _build_initial_state(query, self.k),
+                config=self._make_config(),
+                version="v2",
             ):
-                yield event
+                if event["event"] == "on_chat_model_stream":
+                    chunk = event["data"].get("chunk")
+                    if chunk is not None:
+                        content = chunk.content
+                        if isinstance(content, list):
+                            content = "\n".join(str(i) for i in content)
+                        if content:
+                            yield content
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -61,15 +88,7 @@ class RAGPipeline:
             async_gen = _async_stream()
             while True:
                 try:
-                    event = loop.run_until_complete(async_gen.__anext__())
-                    if isinstance(event, dict):
-                        if event.get("type") == "token":
-                            yield event["content"]
-                        elif event.get("type") == "complete":
-                            yield event["answer"]
-                            break
-                    else:
-                        yield event
+                    yield loop.run_until_complete(async_gen.__anext__())
                 except StopAsyncIteration:
                     break
         finally:

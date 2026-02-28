@@ -28,11 +28,12 @@ import json
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -43,7 +44,22 @@ if str(_root) not in sys.path:
 
 load_dotenv()
 
-app = FastAPI(title="RAG Observability API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from database.dependencies import get_llm, get_vectorstore
+    from cli.langgraph_pipeline import build_rag_graph
+
+    print("Loading embedding model and vectorstore...", flush=True)
+    vectorstore = get_vectorstore()
+    llm = get_llm()
+    print("Building LangGraph pipeline...", flush=True)
+    app.state.graph = await build_rag_graph(vectorstore, llm, with_checkpointing=True)
+    print("Server ready.", flush=True)
+    yield
+
+
+app = FastAPI(title="RAG Observability API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,12 +83,13 @@ async def _sse_events(
     trace_id: str,
     query: str,
     k: int,
+    graph,
     thread_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     from langchain_core.messages import HumanMessage
     from langchain_core.runnables import RunnableConfig
 
-    from cli.langgraph_pipeline import build_rag_graph, generate_thread_id
+    from cli.langgraph_pipeline import generate_thread_id
     from observability.tracer import get_trace_store
 
     store = await get_trace_store()
@@ -87,8 +104,6 @@ async def _sse_events(
     await store.create_trace(trace_id, query, "auto", k, time.time())
 
     try:
-        graph = await build_rag_graph(with_checkpointing=(thread_id is not None))
-
         initial_state = {
             "query": query,
             "messages": [HumanMessage(content=query)],
@@ -208,20 +223,20 @@ def _sse(data: dict) -> str:
 
 
 @app.post("/api/query")
-async def query_endpoint(req: QueryRequest) -> StreamingResponse:
+async def query_endpoint(req: QueryRequest, request: Request) -> StreamingResponse:
     if req.k < 1:
         raise HTTPException(status_code=400, detail="k must be >= 1")
 
     trace_id = str(uuid.uuid4())
     return StreamingResponse(
-        _sse_events(trace_id, req.query, req.k, req.thread_id),
+        _sse_events(trace_id, req.query, req.k, request.app.state.graph, req.thread_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 @app.post("/api/conversation")
-async def conversation_endpoint(req: QueryRequest) -> StreamingResponse:
+async def conversation_endpoint(req: QueryRequest, request: Request) -> StreamingResponse:
     if req.k < 1:
         raise HTTPException(status_code=400, detail="k must be >= 1")
 
@@ -231,7 +246,7 @@ async def conversation_endpoint(req: QueryRequest) -> StreamingResponse:
     trace_id = str(uuid.uuid4())
 
     return StreamingResponse(
-        _sse_events(trace_id, req.query, req.k, thread_id),
+        _sse_events(trace_id, req.query, req.k, request.app.state.graph, thread_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -285,9 +300,7 @@ async def get_multiquery_steps(trace_id: str):
         raise HTTPException(status_code=404, detail="Trace not found")
     steps = await store.get_multiquery_steps(trace_id)
     if steps is None:
-        raise HTTPException(
-            status_code=404, detail="No multi-query steps for this trace"
-        )
+        raise HTTPException(status_code=404, detail="No multi-query steps for this trace")
     return steps
 
 
