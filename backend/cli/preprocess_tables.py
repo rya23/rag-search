@@ -1,4 +1,6 @@
+import json
 import re
+from langchain_core import documents
 import pandas as pd
 from io import StringIO
 from langchain_core.documents import Document
@@ -38,9 +40,6 @@ def markdown_table_to_df(table_md):
     # Strip column whitespace
     df.columns = df.columns.str.strip()
 
-    # Drop empty column names
-    df = df.loc[:, df.columns != ""]
-
     # Remove markdown separator row (---- | ----)
     df = df.iloc[1:].reset_index(drop=True)
 
@@ -73,6 +72,76 @@ def normalize_numeric(x):
         return None
 
 
+def format_table_compact(
+    df: pd.DataFrame,
+    section: str,
+    filing_type: str = "10-K",
+    unit: str | None = None,
+    table_id: int | None = None,
+) -> str:
+    """
+    Convert a DataFrame into a token-efficient structured text block
+    suitable for embedding.
+
+    Output format:
+
+    Filing Type: 10-K
+    Section: ...
+    Unit: USD millions
+
+    Columns: Line Item, 2021, 2022, 2023.
+
+    Revenue: 980, 1050, 1200.
+    COGS: 600, 650, 700.
+    """
+
+    if df.empty:
+        return ""
+
+    # Ensure clean column names
+    df.columns = df.columns.astype(str).str.strip()
+
+    # Identify label column
+    label_col = df.columns[0]
+    value_cols = list(df.columns[1:])
+
+    lines = []
+
+    # Header context (minimal redundancy)
+    lines.append(f"Filing Type: {filing_type}")
+    lines.append(f"Section: {section}")
+
+    if table_id is not None:
+        lines.append(f"Table ID: {table_id}")
+
+    if unit:
+        lines.append(f"Unit: {unit}")
+
+    lines.append("")  # spacing
+
+    # Column definition once
+    column_line = "Columns: " + ", ".join([label_col] + value_cols) + "."
+    lines.append(column_line)
+    lines.append("")
+
+    # Row data
+    for _, row in df.iterrows():
+        label = str(row[label_col]).strip()
+
+        values = []
+        for col in value_cols:
+            val = row[col]
+            if pd.notna(val) and val != "":
+                values.append(str(val).strip())
+            else:
+                values.append("")
+
+        row_line = f"{label}: {', '.join(values)}."
+        lines.append(row_line)
+
+    return "\n".join(lines)
+
+
 def run_extraction(filepath: str) -> list[Document]:
     # STEP 1 — LOAD MARKDOWN
     with open(filepath, "r", encoding="utf-8") as f:
@@ -88,40 +157,22 @@ def run_extraction(filepath: str) -> list[Document]:
     for table_id, (section, table_md) in enumerate(table_sections):
         df = markdown_table_to_df(table_md)
 
+        # Store raw table in Postgres, get back the DB ID
+
         # Clean numeric columns
         for col in df.columns:
             df[col + "_numeric"] = df[col].apply(normalize_numeric)
 
-        for row_id, row in df.iterrows():
-            row_text = "\n".join(
-                [
-                    f"{col}: {row[col]}"
-                    for col in df.columns
-                    if not col.endswith("_numeric")
-                ]
-            )
+        text = format_table_compact(
+            df=df,
+            section=section,
+            unit="USD millions",
+            table_id=table_id,
+        )
 
-            full_text = (
-                f"Filing Type: 10-K\n"
-                f"Section: {section}\n"
-                f"Table ID: {table_id}\n"
-                f"Row ID: {row_id}\n"
-                f"{row_text}"
-            )
+        documents.append(Document(page_content=text))
 
-            meta = {
-                "source": filepath,
-                "section": section,
-                "table_id": table_id,
-                "row_id": row_id,
-            }
+    print(documents[0])  # Print first 500 chars of first table document
 
-            # Add numeric fields to metadata
-            for col in df.columns:
-                if col.endswith("_numeric") and row[col] is not None:
-                    meta[col] = row[col]
-
-            documents.append(Document(page_content=full_text, metadata=meta))
-
-    print(f"Generated {len(documents)} table row documents")
+    print(f"Generated {len(documents)} table documents")
     return documents

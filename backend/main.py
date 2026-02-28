@@ -1,7 +1,29 @@
 import argparse
 
+from dataclasses import dataclass
+from typing import Optional
 
-def cmd_ingest(args):
+
+@dataclass
+class IngestArgs:
+    file: str
+
+
+@dataclass
+class QueryArgs:
+    question: Optional[str]
+    k: int
+    conversation: bool
+
+
+@dataclass
+class ServeArgs:
+    host: str
+    port: int
+    reload: bool
+
+
+def cmd_ingest(args: IngestArgs):
     from cli.preprocess_tables import run_extraction
     from cli.ingest import (
         load_markdown,
@@ -10,20 +32,18 @@ def cmd_ingest(args):
     )
 
     print(f"Extracting tables from {args.file}...")
-    table_docs = run_extraction(args.file)
+    # table_docs = run_extraction(args.file)
 
     print(f"Loading {args.file}...")
     documents = load_markdown(args.file)
     split_docs = split_markdown(documents)
-    all_docs = split_docs + table_docs
-    print(
-        f"Split into {len(split_docs)} text chunks + {len(table_docs)} table row documents. Embedding and uploading..."
-    )
+    all_docs = split_docs
+    print(f"Split into {len(split_docs)} text chunks. Embedding and uploading...")
     build_vectorstore(all_docs)
     print(f"Done. Indexed {len(all_docs)} total chunks.")
 
 
-def cmd_query(args):
+def cmd_query(args: QueryArgs):
     from cli.query import build_pipeline
     from cli.langgraph_pipeline import generate_thread_id
 
@@ -62,7 +82,7 @@ def cmd_query(args):
             print("\n")
 
 
-def cmd_serve(args):
+def cmd_serve(args: ServeArgs):
     import uvicorn
 
     print(f"Starting observability API on http://{args.host}:{args.port}")
@@ -117,13 +137,16 @@ def main():
     )
 
     args = parser.parse_args()
+    # ns = parser.parse_args()
 
     if args.command == "ingest":
-        cmd_ingest(args)
+        cmd_ingest(IngestArgs(file=args.file))
     elif args.command == "query":
-        cmd_query(args)
+        cmd_query(
+            QueryArgs(question=args.question, k=args.k, conversation=args.conversation)
+        )
     elif args.command == "serve":
-        cmd_serve(args)
+        cmd_serve(ServeArgs(host=args.host, port=args.port, reload=args.reload))
 
 
 if __name__ == "__main__":
