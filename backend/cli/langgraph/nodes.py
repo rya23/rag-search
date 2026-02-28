@@ -2,15 +2,43 @@
 
 from typing import Generator
 
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from cli.pipeline_legacy import MultiQueryStep
-from cli.retrievers import MULTI_QUERY_PROMPT
-from prompts.system_prompt import SYSTEM_PROMPT
+from langchain_classic.prompts import PromptTemplate
 
+from cli.pipeline import MultiQueryStep
+from prompts.system_prompt import SYSTEM_PROMPT
 from .state import RAGState
+
+
+MULTI_QUERY_PROMPT = PromptTemplate(
+    template="""
+You are an AI language model assistant.
+
+Your task is to generate **3 semantically distinct reformulations** of the user's question for the purpose of retrieving documents from a vector database.
+
+Each reformulation must:
+
+1. Focus on a **different conceptual angle or subtopic** of the original question.
+2. Use **substantially different vocabulary and phrasing** (avoid simple paraphrasing).
+3. Emphasize different:
+
+   * technical dimensions,
+   * use cases,
+   * constraints,
+   * stakeholders,
+   * or theoretical foundations.
+4. Share **minimal keyword overlap** with the other generated questions.
+5. Be independently useful for retrieving different but relevant documents.
+
+Avoid rewording the same intent. Instead, decompose the question into alternative perspectives.
+
+Output exactly 3 questions, separated by newlines, with no numbering or commentary.
+Question: {question}
+""",
+    input_variables=["question"],
+)
 
 
 # =============================================================================

@@ -27,7 +27,6 @@ def cmd_query(args):
     from cli.query import build_pipeline
     from cli.langgraph_pipeline import generate_thread_id
 
-    # Generate a thread ID for this session (enables conversation continuity)
     thread_id = generate_thread_id() if args.conversation else None
 
     if thread_id:
@@ -35,10 +34,7 @@ def cmd_query(args):
         print("Note: Follow-up questions will use conversation context.\n")
 
     print(f"Initializing LangGraph pipeline (auto-routing, k={args.k})...")
-    # Enable checkpointing when conversation mode is active
-    pipeline = build_pipeline(
-        mode=args.retriever, k=args.k, with_checkpointing=args.conversation
-    )
+    pipeline = build_pipeline(k=args.k, with_checkpointing=args.conversation)
 
     if thread_id:
         pipeline.set_thread_id(thread_id)
@@ -47,7 +43,7 @@ def cmd_query(args):
         print("Assistant: ", end="", flush=True)
         for chunk in pipeline.stream_run(args.question):
             print(chunk, end="", flush=True)
-        print()  # newline at end
+        print()
     else:
         print("RAG query mode. Type 'exit' or Ctrl-C to quit.\n")
         while True:
@@ -63,7 +59,7 @@ def cmd_query(args):
             print("Assistant: ", end="", flush=True)
             for chunk in pipeline.stream_run(question):
                 print(chunk, end="", flush=True)
-            print("\n")  # newline at end
+            print("\n")
 
 
 def cmd_serve(args):
@@ -99,15 +95,6 @@ def main():
         help="Number of chunks to retrieve per query (default: 5).",
         type=int,
         default=5,
-    )
-    query_parser.add_argument(
-        "--retriever",
-        choices=["simple", "multi"],
-        default="simple",
-        help=(
-            "[DEPRECATED] Retrieval strategy now determined automatically by query analysis. "
-            "This flag is kept for backward compatibility but is ignored."
-        ),
     )
     query_parser.add_argument(
         "--conversation",

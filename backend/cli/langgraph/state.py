@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-from cli.pipeline_legacy import MultiQueryStep
+from cli.pipeline import MultiQueryStep
 
 
 class RAGState(TypedDict):
