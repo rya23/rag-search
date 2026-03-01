@@ -116,29 +116,21 @@ export function TraceTimeline({ trace }: TraceTimelineProps) {
             <CardContent>
               <div className="space-y-4">
                 {trace.multiquery_steps.per_query_docs.map((queryDocs, index) => {
-                  // Color coding for different queries
-                  const queryColors = [
-                    { bg: "bg-chart-1/10", border: "border-chart-1/30", text: "text-chart-1", badge: "bg-chart-1" },
-                    { bg: "bg-chart-2/10", border: "border-chart-2/30", text: "text-chart-2", badge: "bg-chart-2" },
-                    { bg: "bg-chart-3/10", border: "border-chart-3/30", text: "text-chart-3", badge: "bg-chart-3" },
-                    { bg: "bg-chart-4/10", border: "border-chart-4/30", text: "text-chart-4", badge: "bg-chart-4" },
-                    { bg: "bg-chart-5/10", border: "border-chart-5/30", text: "text-chart-5", badge: "bg-chart-5" },
-                  ];
-                  const colors = queryColors[index % queryColors.length];
+                  // Alternate between default and secondary badge variants
+                  const badgeVariant = index % 2 === 0 ? "default" : "secondary";
 
                   return (
                     <div key={index} className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <div className={`h-3 w-3 rounded-full ${colors.badge}`} />
-                        <Badge variant="outline" className={`${colors.bg} ${colors.border} ${colors.text}`}>
+                        <Badge variant={badgeVariant}>
                           Query {index + 1}
                         </Badge>
-                        <Badge variant="secondary" className="text-xs">
+                        <Badge variant="outline" className="text-xs">
                           {queryDocs.docs.length} docs
                         </Badge>
                       </div>
-                      <div className={`rounded-lg border p-3 ${colors.bg} ${colors.border}`}>
-                        <p className="text-xs font-medium mb-3 ${colors.text}">{queryDocs.generated_query}</p>
+                      <div className="rounded-lg border p-3 bg-accent">
+                        <p className="text-xs font-medium mb-3">{queryDocs.generated_query}</p>
                         <div className="space-y-1.5">
                           {queryDocs.docs.slice(0, 3).map((doc, docIndex) => (
                             <div key={docIndex} className="flex items-start gap-2 text-xs">
