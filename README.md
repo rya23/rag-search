@@ -2,11 +2,14 @@
 
 A production-grade RAG (Retrieval-Augmented Generation) system featuring a **fine-tuned embedding model** trained on financial data, intelligent query routing via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning.
 
+![demo](public/demo.gif)
+
 ## 🎯 Key ML Features
 
 ### Fine-Tuned Embedding Model
 
 - **Base Model**: `nomic-ai/modernbert-embed-base`
+- **Fine-Tuned Model (Hugging Face)**: [rya23/modernbert-embed-finance-matryoshka](https://huggingface.co/rya23/modernbert-embed-finance-matryoshka)
 - **Training Dataset**: [philschmid/financial-rag-embedding-dataset](https://huggingface.co/datasets/philschmid/finanical-rag-embedding-dataset) (~10k financial Q&A pairs)
 - **Architecture**: Matryoshka Representation Learning with Multiple Negatives Ranking Loss
 - **Output Dimensions**: [768, 512, 256, 128, 64] - flexible embedding sizes for different use cases
@@ -105,6 +108,7 @@ rag-search/
 - **Bun 1.2+** for frontend
 - **PostgreSQL** for trace storage and checkpointing
 - **ChromaDB** for vector storage
+- **Docker + Docker Compose** (optional, for containerized deployment)
 
 ### 1. Install Dependencies
 
@@ -168,6 +172,16 @@ bun dev
 
 Frontend will run on `http://localhost:3000`
 
+### Dockerized Run (Recommended)
+
+This application is fully dockerized with `Dockerfile`s and `docker-compose.yml`.
+
+```bash
+docker compose up --build
+```
+
+This starts the stack in containers with a single command.
+
 ### 4. Ingest Documents (First Time)
 
 ```bash
@@ -180,7 +194,7 @@ python main.py ingest path/to/your/document.md
 
 ### Fine-Tuning Your Own Embedding Model
 
-The fine-tuned embedding model is available at `modernbert-embed-finance-matryoshka`. To train your own:
+The fine-tuned embedding model is available at [rya23/modernbert-embed-finance-matryoshka](https://huggingface.co/rya23/modernbert-embed-finance-matryoshka). To train your own:
 
 1. **Prepare Your Dataset**
 
@@ -201,7 +215,10 @@ The fine-tuned embedding model is available at `modernbert-embed-finance-matryos
 
 3. **Train & Evaluate**
     - Training uses MultipleNegativesRankingLoss wrapped in MatryoshkaLoss
-      Evaluation Metrics
+    - Evaluation is performed across Matryoshka dimensions `[768, 512, 256, 128, 64]`
+    - Primary optimization target: `NDCG@10` at `128d`
+
+## Evaluation Metrics
 
 ### Information Retrieval Metrics
 
@@ -226,44 +243,6 @@ dims = [768, 512, 256, 128, 64]
 # - 128d dimension offers best latency/quality tradeoff
 # - Minimal quality degradation even at 64d
 ```
-
-## API Endpoints
-
-### Backend (FastAPI)
-
-- `POST /api/query` - Stream query with SSE
-
-    ```json
-    {
-        "query": "What was Apple's revenue?",
-        "k": 5,
-        "thread_id": "optional-uuid"
-    }
-    ```
-
-- `GET /api/traces?limit=50` - List recent traces
-- `GET /api/traces/{trace_id}` - Get trace details
-- `GET /api/traces/{trace_id}/docs` - Get retrieved documents
-
-## Technology Stack
-
-1. Type your question in the input box
-2. Watch real-time streaming responses
-3. Adjust `k` parameter to retrieve more/fewer documents
-
-### View Traces
-
-1. Click "View Traces" in the top right
-2. See all queries with performance metrics
-3. Click any trace to see:
-    - Full query and response
-    - Retrieved documents
-    - Timing breakdown (retrieval, generation, total)
-    - Node execution flow
-
-### Conversation Mode
-
-The application automatically maintains conversation context using thread IDs. Each chat session is a separate thread, allowing follow-up questions.
 
 ## API Endpoints
 
@@ -372,6 +351,14 @@ Backend (FastAPI) → LangGraph Pipeline
 
 ## 🚀 Production Deployment
 
+### Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Run this from the repository root to start the dockerized application.
+
 ### Backend
 
 ```bash
@@ -409,7 +396,8 @@ bun start
 
 - **Notebook**: [Fine-tuning Embedding Models](backend/notebooks/finetuning_embeddding_models.ipynb)
 - **Dataset**: [Financial RAG Dataset](https://huggingface.co/datasets/philschmid/finanical-rag-embedding-dataset)
-- **Model**: ModernBERT Embed Base
+- **Fine-Tuned Model**: [rya23/modernbert-embed-finance-matryoshka](https://huggingface.co/rya23/modernbert-embed-finance-matryoshka)
+- **Base Model**: `nomic-ai/modernbert-embed-base`
 - **Framework**: [Sentence Transformers](https://www.sbert.net/)
 - **Matryoshka Loss**: [Paper](https://arxiv.org/abs/2205.13147)
 
