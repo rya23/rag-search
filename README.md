@@ -1,6 +1,6 @@
 # RAG Search - Advanced RAG System with Fine-Tuned Embeddings
 
-A production-grade RAG (Retrieval-Augmented Generation) system featuring a **fine-tuned embedding model** trained on financial data, intelligent query routing via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning.
+A Retrieval-Augmented Generation system featuring a fine-tuned embedding model trained on financial data, intelligent query routing via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning. Trained on dataset of question answer pairs from nvidias 10k document.
 
 ![website_demo](public/demo.gif)
 
@@ -17,15 +17,31 @@ A production-grade RAG (Retrieval-Augmented Generation) system featuring a **fin
 ### Performance Improvements
 
 Fine-tuning on domain-specific financial data achieved substantial gains across all metrics:
+Base vs Fine-Tuned at 768d Embeddings
 
-| Metric      | Dimension | Base Model | Fine-Tuned | Improvement |
-| ----------- | --------- | ---------- | ---------- | ----------- |
-| **NDCG@10** | 128d      | ~0.85      | ~0.95      | **+11.8%**  |
-| **MRR@10**  | 128d      | ~0.83      | ~0.94      | **+13.3%**  |
-| **MAP@100** | 128d      | ~0.84      | ~0.94      | **+11.9%**  |
-| Accuracy@1  | 128d      | ~0.81      | ~0.92      | **+13.6%**  |
+| Metric         | Base   | Fine-Tuned | Δ Abs  | Δ %    |
+| -------------- | ------ | ---------- | ------ | ------ |
+| **NDCG@10**    | 0.7533 | 0.8289     | 0.0756 | 10.04% |
+| **MRR@10**     | 0.7164 | 0.7970     | 0.0805 | 11.24% |
+| **MAP@100**    | 0.7209 | 0.8001     | 0.0792 | 10.98% |
+| **Accuracy@1** | 0.6399 | 0.7247     | 0.0849 | 13.26% |
 
-_Performance varies across embedding dimensions. See [notebooks](backend/notebooks/finetuning_embeddding_models.ipynb) for full evaluation._
+_Performance varies across embedding dimensions. See [notebook](backend/notebooks/finetuning_embeddding_models.ipynb) for full evaluation._
+
+NDCG@k (Normalized Discounted Cumulative Gain) measures the quality of the top k ranked results by considering both relevance and position. It assigns higher importance to relevant items appearing earlier in the ranking and applies a logarithmic discount to lower-ranked positions
+
+MRR@k (Mean Reciprocal Rank) evaluates how quickly the first relevant result appears within the top k positions. For each query, it computes the reciprocal of the rank of the first relevant item (1 divided by its rank). These values are then averaged across queries. A higher score indicates that relevant results tend to appear earlier in the ranking.
+
+MAP@k (Mean Average Precision at 100) measures ranking precision across the top k results. For each query, it calculates the average precision by computing precision at every position where a relevant item appears and then averaging those values. The final score is the mean across all queries. MAP reflects both ranking order and the ability to retrieve multiple relevant items.
+
+Efficiency Highlight — NDCG@10 Cross-Dimension
+
+| Configuration    | NDCG@10 |
+| ---------------- | ------- |
+| Base — 768d      | 0.7533  |
+| Fine-Tuned — 64d | 0.7831  |
+
+The fine-tuned 64-dimensional model (0.7831) outperforms the base 768-dimensional model (0.7533) by +0.0298 absolute, despite using 12× fewer dimensions.
 
 ### Training Configuration
 
@@ -73,9 +89,9 @@ rag-search/
 ### ML Pipeline
 
 1. **Document Ingestion**
-    - Chunking strategy optimized for financial documents
+    - Semantic Chunking strategy with tables preprocesed for financial documents
     - Embedding generation using fine-tuned ModernBERT
-    - ChromaDB vector storage with cosine similarity
+    - ChromaDB / storage with cosine similarity
 
 2. **Query Processing**
     - Query embedding with fine-tuned model (128d optimized)
@@ -349,7 +365,7 @@ Backend (FastAPI) → LangGraph Pipeline
     Frontend Updates UI Real-time
 ```
 
-## 🚀 Production Deployment
+## Production Deployment
 
 ### Docker Compose
 
@@ -364,7 +380,7 @@ Run this from the repository root to start the dockerized application.
 ```bash
 cd backend
 uv sync --no-dev
-gunicorn api.server:app -w 4 -k uvicorn.workers.UvicornWorker
+python main.py serve --reload
 ```
 
 ### Frontend
