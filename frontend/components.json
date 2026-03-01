@@ -19,5 +19,10 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "registries": {}
+  "registries": {
+    "@abui": "https://abui.io/r/{name}.json",
+    "@aceternity": "https://ui.aceternity.com/registry/{name}.json",
+    "@assistant-ui": "https://r.assistant-ui.com/{name}.json",
+    "@manifest": "https://ui.manifest.build/r/{name}.json"
+  }
 }

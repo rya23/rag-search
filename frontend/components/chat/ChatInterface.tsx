@@ -4,16 +4,27 @@ import { useState, useRef, useEffect } from "react";
 import { useSSEQuery } from "@/hooks/useSSEQuery";
 import { Message } from "./Message";
 import { NodeProgress } from "./NodeProgress";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Send, Loader2, AlertCircle, Sparkles, History } from "lucide-react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Send, Loader2, AlertCircle, Sparkles, Settings2, RotateCcw } from "lucide-react";
 import { DEFAULT_K } from "@/lib/config";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ChatInterface() {
   const [query, setQuery] = useState("");
@@ -39,135 +50,190 @@ export function ChatInterface() {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-5xl mx-auto p-4">
+    <div className="flex flex-col h-screen">
       {/* Header */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Sparkles className="w-8 h-8" />
-            RAG Search
-          </h1>
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sticky top-0 z-10">
+        <SidebarTrigger className="-ml-1" />
+        <Separator orientation="vertical" className="mr-2 h-4" />
+        
+        <div className="flex flex-1 items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-display flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-chart-1" />
+              RAG Search
+            </h1>
+            
+            <div className="flex items-center gap-2">
+              {retrievalMethod && (
+                <Badge variant="secondary" className="text-xs font-medium">
+                  {retrievalMethod === "simple_retrieve" ? "Simple" : "Multi-Query"}
+                </Badge>
+              )}
+              {threadId && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {threadId.slice(0, 8)}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Thread ID: {threadId}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {traceId && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      <Link href={`/traces/${traceId}`} className="hover:underline">
+                        Trace: {traceId.slice(0, 8)}
+                      </Link>
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Click to view trace details</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <Link href="/traces">
-              <Button variant="outline" size="sm">
-                <History className="w-4 h-4 mr-2" />
-                View Traces
-              </Button>
-            </Link>
-            {retrievalMethod && (
-              <Badge variant="secondary" className="text-xs">
-                {retrievalMethod === "simple_retrieve" ? "Simple" : "Multi-Query"} Retrieval
-              </Badge>
+            {messages.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={reset}
+                    disabled={isStreaming}
+                    className="h-9 w-9"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Clear conversation</p>
+                </TooltipContent>
+              </Tooltip>
             )}
-            {threadId && (
-              <Badge variant="outline" className="font-mono text-xs">
-                Thread: {threadId.slice(0, 8)}...
-              </Badge>
-            )}
-            {traceId && (
-              <Badge variant="outline" className="font-mono text-xs">
-                Trace: {traceId.slice(0, 8)}...
-              </Badge>
-            )}
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-9 w-9">
+                  <Settings2 className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Query Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="p-2">
+                  <Label htmlFor="k-setting" className="text-xs text-muted-foreground">
+                    Documents to Retrieve (k)
+                  </Label>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Input
+                      id="k-setting"
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={k}
+                      onChange={(e) => setK(parseInt(e.target.value) || DEFAULT_K)}
+                      className="h-8"
+                      disabled={isStreaming}
+                    />
+                    <span className="text-sm text-muted-foreground">k = {k}</span>
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            <ThemeToggle />
           </div>
         </div>
-        <p className="text-muted-foreground">
-          Ask questions about your documents with intelligent query routing
-        </p>
+      </header>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full" ref={scrollRef}>
+          <div className="container max-w-4xl mx-auto px-4 py-6">
+            {messages.length === 0 && !isStreaming && (
+              <div className="flex items-center justify-center h-[calc(100vh-16rem)]">
+                <div className="text-center space-y-4">
+                  <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-xl font-semibold text-display">Start a Conversation</h2>
+                    <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                      Ask questions about your documents and get intelligent answers powered by advanced retrieval.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center pt-4">
+                    <Badge variant="outline" className="text-xs">
+                      Multi-Query Retrieval
+                    </Badge>
+                    <Badge variant="outline" className="text-xs">
+                      Semantic Search
+                    </Badge>
+                    <Badge variant="outline" className="text-xs">
+                      Real-time Streaming
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {messages.map((message) => (
+              <Message key={message.id} message={message} />
+            ))}
+
+            {/* Node Progress */}
+            {isStreaming && (
+              <NodeProgress progress={nodeProgress} isStreaming={isStreaming} />
+            )}
+
+            {/* Error Display */}
+            {error && (
+              <Alert variant="destructive" className="mb-4 animate-in">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </ScrollArea>
       </div>
 
-      {/* Chat Messages */}
-      <Card className="flex-1 mb-4 overflow-hidden flex flex-col">
-        <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-          {messages.length === 0 && !isStreaming && (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <div className="text-center">
-                <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg">Start a conversation</p>
-                <p className="text-sm mt-2">
-                  Ask anything about your documents
-                </p>
-              </div>
-            </div>
-          )}
-
-          {messages.map((message) => (
-            <Message key={message.id} message={message} />
-          ))}
-
-          {/* Node Progress */}
-          {isStreaming && (
-            <NodeProgress progress={nodeProgress} isStreaming={isStreaming} />
-          )}
-
-          {/* Error Display */}
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </ScrollArea>
-
-        <Separator />
-
-        {/* Input Form */}
-        <form onSubmit={handleSubmit} className="p-4">
-          <div className="flex items-end gap-2">
+      {/* Input Area */}
+      <div className="shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container max-w-4xl mx-auto px-4 py-4">
+          <form onSubmit={handleSubmit} className="flex items-end gap-2">
             <div className="flex-1">
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ask a question..."
+                placeholder="Ask a question about your documents..."
                 disabled={isStreaming}
-                className="resize-none"
+                className="resize-none h-11 text-sm"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="text-sm text-muted-foreground whitespace-nowrap">
-                k = {k}
-              </div>
-              <Input
-                type="number"
-                min="1"
-                max="20"
-                value={k}
-                onChange={(e) => setK(parseInt(e.target.value) || DEFAULT_K)}
-                className="w-16"
-                disabled={isStreaming}
-              />
-              <Button
-                type="submit"
-                disabled={!query.trim() || isStreaming}
-                size="icon"
-              >
-                {isStreaming ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            {messages.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={reset}
-                disabled={isStreaming}
-              >
-                Clear conversation
-              </Button>
-            )}
-          </div>
-        </form>
-      </Card>
-
-      {/* Footer */}
-      <div className="text-center text-xs text-muted-foreground">
-        Powered by LangGraph • FastAPI • Next.js
+            <Button
+              type="submit"
+              disabled={!query.trim() || isStreaming}
+              size="icon"
+              className="h-11 w-11 shrink-0"
+            >
+              {isStreaming ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </form>
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            Powered by LangGraph • FastAPI • Next.js
+          </p>
+        </div>
       </div>
     </div>
   );
