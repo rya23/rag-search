@@ -1,6 +1,51 @@
-# RAG Search - Monorepo
+# RAG Search - Advanced RAG System with Fine-Tuned Embeddings
 
-A production-ready RAG (Retrieval-Augmented Generation) application with intelligent query routing, powered by LangGraph and FastAPI backend with a modern Next.js frontend.
+A production-grade RAG (Retrieval-Augmented Generation) system featuring a **fine-tuned embedding model** trained on financial data, intelligent query routing via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning.
+
+## 🎯 Key ML Features
+
+### Fine-Tuned Embedding Model
+
+- **Base Model**: `nomic-ai/modernbert-embed-base`
+- **Training Dataset**: [philschmid/financial-rag-embedding-dataset](https://huggingface.co/datasets/philschmid/finanical-rag-embedding-dataset) (~10k financial Q&A pairs)
+- **Architecture**: Matryoshka Representation Learning with Multiple Negatives Ranking Loss
+- **Output Dimensions**: [768, 512, 256, 128, 64] - flexible embedding sizes for different use cases
+
+### Performance Improvements
+
+Fine-tuning on domain-specific financial data achieved substantial gains across all metrics:
+
+| Metric      | Dimension | Base Model | Fine-Tuned | Improvement |
+| ----------- | --------- | ---------- | ---------- | ----------- |
+| **NDCG@10** | 128d      | ~0.85      | ~0.95      | **+11.8%**  |
+| **MRR@10**  | 128d      | ~0.83      | ~0.94      | **+13.3%**  |
+| **MAP@100** | 128d      | ~0.84      | ~0.94      | **+11.9%**  |
+| Accuracy@1  | 128d      | ~0.81      | ~0.92      | **+13.6%**  |
+
+_Performance varies across embedding dimensions. See [notebooks](backend/notebooks/finetuning_embeddding_models.ipynb) for full evaluation._
+
+### Training Configuration
+
+```python
+# Matryoshka Loss with MNRL
+base_loss = MultipleNegativesRankingLoss(model=model)
+train_loss = MatryoshkaLoss(
+    model=model,
+    loss=base_loss,
+    matryoshka_dims=[768, 512, 256, 128, 64]
+)
+
+# Training: 4 epochs, global batch size 384
+# Optimizer: AdamW with cosine LR scheduler (2e-5)
+# Evaluated on NDCG@10 with 128d embeddings
+```
+
+### Intelligent Query Routing (LangGraph)
+
+- **Query Analysis**: Automatic classification of query complexity
+- **Adaptive Retrieval**: Routes to simple vs multi-query retrieval pipelines
+- **Conversational Context**: Maintains thread-based conversation history
+- **Streaming Generation**: Real-time token streaming with node execution updates
 
 ## Monorepo Structure
 
@@ -20,24 +65,39 @@ rag-search/
 └── package.json        # Bun workspace config
 ```
 
-## Features
+## System Architecture
 
-### Backend
+### ML Pipeline
 
-- **Intelligent Query Routing**: Automatic analysis and routing to simple or multi-query retrieval
-- **State Persistence**: PostgreSQL checkpointing for conversation threads
-- **Observability**: Complete trace storage with performance metrics
-- **SSE Streaming**: Real-time token streaming with node execution updates
+1. **Document Ingestion**
+    - Chunking strategy optimized for financial documents
+    - Embedding generation using fine-tuned ModernBERT
+    - ChromaDB vector storage with cosine similarity
 
-### Frontend
+2. **Query Processing**
+    - Query embedding with fine-tuned model (128d optimized)
+    - LangGraph-based routing: Simple vs Complex queries
+    - Multi-query generation for complex information needs
 
-- **Chat Interface**: Real-time streaming chat with markdown support
-- **Dark Theme**: Beautiful UI with shadcn/ui components
-- **Trace Viewer**: View all queries with performance metrics
-- **Document Inspector**: See retrieved documents and metadata
-- **SSE Integration**: Native Server-Sent Events handling
+3. **Retrieval & Generation**
+    - Top-k similarity search with configurable k
+    - Context-aware generation with conversation history
+    - Groq LLM for fast inference
 
-## 🚀 Quick Start
+### Observability & Monitoring
+
+- **Trace Storage**: PostgreSQL-backed complete query traces
+- **Performance Metrics**: Retrieval time, generation time, total latency
+- **Node Execution Tracking**: Full LangGraph pipeline visibility
+- **Document Inspector**: Retrieved chunks with similarity scores
+
+### Frontend Interface
+
+- Real-time streaming chat with markdown rendering
+- Trace viewer with performance analytics
+- Document inspection and metadata display
+
+## Quick Start
 
 ### Prerequisites
 
@@ -116,14 +176,80 @@ source .venv/bin/activate
 python main.py ingest path/to/your/document.md
 ```
 
-## 📖 Usage
+## ML Model Training & Evaluation
 
-### Chat Interface
+### Fine-Tuning Your Own Embedding Model
 
-1. Open `http://localhost:3000`
-2. Type your question in the input box
-3. Watch real-time streaming responses
-4. Adjust `k` parameter to retrieve more/fewer documents
+The fine-tuned embedding model is available at `modernbert-embed-finance-matryoshka`. To train your own:
+
+1. **Prepare Your Dataset**
+
+    ```python
+    # Dataset format: anchor (query), positive (context), id
+    dataset = load_dataset("your-dataset")
+    dataset = dataset.rename_column("question", "anchor")
+    dataset = dataset.rename_column("context", "positive")
+    ```
+
+2. **Configure Training**
+
+    ```bash
+    cd backend/notebooks
+    # Edit finetuning_embeddding_models.ipynb
+    # Adjust: dataset, model_id, matryoshka_dims, training args
+    ```
+
+3. **Train & Evaluate**
+    - Training uses MultipleNegativesRankingLoss wrapped in MatryoshkaLoss
+      Evaluation Metrics
+
+### Information Retrieval Metrics
+
+The system evaluates embedding quality using:
+
+- **NDCG@10** (Normalized Discounted Cumulative Gain): Primary optimization target
+- **MRR@10** (Mean Reciprocal Rank): First relevant result position
+- **MAP@100** (Mean Average Precision): Overall precision across results
+- **Accuracy@k**: Exact match in top-k results
+- **Precision@k**: Relevant results ratio in top-k
+- **Recall@k**: Coverage of all relevant results
+
+### Comparative Analysis
+
+```python
+# From evaluation notebook
+metrics = ['ndcg@10', 'mrr@10', 'map@100', 'accuracy@1']
+dims = [768, 512, 256, 128, 64]
+
+# Base vs Fine-Tuned comparison shows:
+# - Consistent improvements across all dimensions
+# - 128d dimension offers best latency/quality tradeoff
+# - Minimal quality degradation even at 64d
+```
+
+## API Endpoints
+
+### Backend (FastAPI)
+
+- `POST /api/query` - Stream query with SSE
+
+    ```json
+    {
+        "query": "What was Apple's revenue?",
+        "k": 5,
+        "thread_id": "optional-uuid"
+    }
+    ```
+
+- `GET /api/traces?limit=50` - List recent traces
+- `GET /api/traces/{trace_id}` - Get trace details
+- `GET /api/traces/{trace_id}/docs` - Get retrieved documents
+
+## Technology Stack
+
+1. Type your question in the input box
+2. Watch real-time streaming responses
+3. Adjust `k` parameter to retrieve more/fewer documents
 
 ### View Traces
 
@@ -147,7 +273,7 @@ The application automatically maintains conversation context using thread IDs. E
 
     ```json
     {
-        "query": "What was Apple's revenue?",
+        "query": "What was AMD's revenue?",
         "k": 5,
         "thread_id": "optional-uuid"
     }
@@ -157,16 +283,30 @@ The application automatically maintains conversation context using thread IDs. E
 - `GET /api/traces/{trace_id}` - Get trace details
 - `GET /api/traces/{trace_id}/docs` - Get retrieved documents
 
-#Frontend Technology Stack
+## Technology Stack
+
+### ML & Backend
+
+| Component          | Technology              |
+| ------------------ | ----------------------- |
+| Embedding Model    | ModernBERT (fine-tuned) |
+| Training Framework | Sentence Transformers   |
+| Loss Function      | Matryoshka + MNRL       |
+| Vector Store       | ChromaDB                |
+| LLM                | Groq (Llama 3.1)        |
+| Orchestration      | LangGraph               |
+| API Framework      | FastAPI                 |
+| Database           | PostgreSQL              |
+
+### Frontend
 
 | Layer            | Technology                    |
 | ---------------- | ----------------------------- |
 | Framework        | Next.js 15 (App Router)       |
 | UI Components    | shadcn/ui                     |
 | Styling          | Tailwind CSS v4               |
-| State Management | TanStack Query (React Query)  |
+| State Management | TanStack Query                |
 | SSE Handling     | Custom hook with native fetch |
-| Icons            | Lucide React                  |
 | Markdown         | react-markdown                |
 
 ## Project Scripts
@@ -181,10 +321,20 @@ bun build        # Build frontend for production
 ### Backend
 
 ```bash
-python main.py ingest <file>        # Ingest documents
+python main.py ingest <file>        # Ingest documents with fine-tuned embeddings
 python main.py query                # Interactive query mode
-python main.py query --conversation # Conversation mode
-python main.py serve                # Start API server
+python main.py query --conversation # Conversation mode with context
+python main.py serve                # Start API server with streaming
+```
+
+### ML Notebooks
+
+```bash
+cd backend/notebooks
+jupyter notebook finetuning_embeddding_models.ipynb
+# - Train custom embedding models
+# - Evaluate on your dataset
+# - Compare base vs fine-tuned performance
 ```
 
 ### Frontend
@@ -207,7 +357,7 @@ Backend (FastAPI) → LangGraph Pipeline
                     ↓
              Analyze Query
                     ↓
-        ┌──────────┴──────────┐
+        ┌───────────┴──────────┐
    [Simple]              [Complex]
         ↓                     ↓
   Simple Retrieval    Multi-Query Retrieval
@@ -220,70 +370,7 @@ Backend (FastAPI) → LangGraph Pipeline
     Frontend Updates UI Real-time
 ```
 
-### SSE Event Types
-
-```typescript
-{ type: "trace_id", data: "uuid" }      // Trace identifier
-{ type: "thread_id", data: "uuid" }     // Thread identifier
-{ type: "node", data: "node_name" }     // LangGraph node execution
-{ type: "token", data: "text" }         // Streaming token
-{ type: "error", data: "message" }      // Error message
-{ type: "done" }                        // Stream complete
-```
-
-## 🔍 How Query Routing Works
-
-### Simple Queries → Direct Retrieval
-
-- Short, straightforward questions
-- Factual lookups
-- Examples: "What is revenue?", "Define EBITDA"
-
-### Complex Queries → Multi-Query Retrieval
-
-Detected by:
-
-- Keywords: `compare`, `analyze`, `trend`, `versus`, `why`
-- Query length > 15 words
-- Examples: "Compare Apple and Microsoft revenue trends"
-
-## 🛠️ Development Tips
-
-### Hot Reload
-
-Both backend (`--reload`) and frontend (Next.js) support hot reload during development.
-
-### Debugging
-
-- Backend logs: Console output from FastAPI
-- Frontend: Browser DevTools → Network → EventStream
-- Traces: View in `/traces` page
-
-### Adding New Components
-
-```bash
-cd frontend
-bunx shadcn@latest add <component-name>
-```
-
-## Database Schema
-
-### Traces Table
-
-- `trace_id`: UUID primary key
-- `query`: Text query
-- `response`: Generated answer
-- `k`: Number of documents retrieved
-- `status`: pending | completed | failed
-- `retriever_ms`, `generator_ms`, `total_ms`: Timing metrics
-- `created_at`: Timestamp
-
-### Documents Table
-
-- Links retrieved documents to traces
-- Stores content, metadata, and relevance scores
-
-## Production Deployment
+## 🚀 Production Deployment
 
 ### Backend
 
@@ -300,3 +387,37 @@ cd frontend
 bun run build
 bun start
 ```
+
+## Performance Considerations
+
+### Embedding Dimension Selection
+
+- **768d**: Highest accuracy, ~2x slower than 128d
+- **512d**: Balanced, good for moderate-scale deployments
+- **256d**: Fast with minimal accuracy loss
+- **128d**: **Recommended** - optimal speed/accuracy tradeoff
+- **64d**: Ultra-fast, suitable for initial filtering in cascade retrieval
+
+### Optimization Strategies
+
+1. **Matryoshka Embeddings**: Single model deployment, runtime dimension switching
+2. **Batch Retrieval**: Process multiple queries in parallel
+3. **Caching**: Store embeddings for frequently accessed documents
+4. **Quantization**: Further reduce memory footprint (future work)
+
+## References & Resources
+
+- **Notebook**: [Fine-tuning Embedding Models](backend/notebooks/finetuning_embeddding_models.ipynb)
+- **Dataset**: [Financial RAG Dataset](https://huggingface.co/datasets/philschmid/finanical-rag-embedding-dataset)
+- **Model**: ModernBERT Embed Base
+- **Framework**: [Sentence Transformers](https://www.sbert.net/)
+- **Matryoshka Loss**: [Paper](https://arxiv.org/abs/2205.13147)
+
+## Contributing
+
+Contributions welcome! Areas of interest:
+
+- Additional domain-specific fine-tuning datasets
+- Alternative embedding architectures
+- Improved query routing strategies
+- Performance benchmarking tools
