@@ -338,7 +338,6 @@ jupyter notebook finetuning_embeddding_models.ipynb
 bun dev          # Start dev server
 bun build        # Production build
 bun start        # Start production server
-bun lint         # Run ESLint
 ```
 
 ## Architecture
