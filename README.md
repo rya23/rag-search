@@ -2,7 +2,7 @@
 
 A production-grade RAG (Retrieval-Augmented Generation) system featuring a **fine-tuned embedding model** trained on financial data, intelligent query routing via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning.
 
-![demo](public/demo.gif)
+![website_demo](public/demo.gif)
 
 ## 🎯 Key ML Features
 
