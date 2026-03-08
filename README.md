@@ -1,6 +1,6 @@
-# RAG Search - Advanced RAG System with Fine-Tuned Embeddings
+# RAG Search - Adaptive Matryoshka RAG System with Fine-Tuned Embeddings
 
-A Retrieval-Augmented Generation system featuring a fine-tuned embedding model trained on financial data, intelligent query routing via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning. Trained on dataset of question answer pairs from nvidias 10k document.
+A Retrieval-Augmented Generation system featuring a fine-tuned embedding model trained on financial data, an adaptive quality-gated retrieval pipeline via LangGraph, and comprehensive observability. Achieves significant performance improvements over base models through Matryoshka representation learning. Trained on a dataset of question-answer pairs from NVIDIA's 10-K document.
 
 ![website_demo](public/demo.gif)
 
@@ -59,12 +59,14 @@ train_loss = MatryoshkaLoss(
 # Evaluated on NDCG@10 with 128d embeddings
 ```
 
-### Intelligent Query Routing (LangGraph)
+### Adaptive Matryoshka Retrieval Pipeline (LangGraph)
 
-- **Query Analysis**: Automatic classification of query complexity
-- **Adaptive Retrieval**: Routes to simple vs multi-query retrieval pipelines
-- **Conversational Context**: Maintains thread-based conversation history
-- **Streaming Generation**: Real-time token streaming with node execution updates
+- **Fast Path (128d)**: Initial retrieval using compact 128-dimensional embeddings for low-latency first-pass search
+- **Quality Gate**: Cross-encoder reranker scores `(query, doc)` pairs; if top-1 score ≥ threshold → answer directly
+- **Escalation Path (768d)**: Weak retrieval triggers 768d multi-query expansion for maximum recall
+- **Dual Cross-Encoder Reranking**: Applied after both fast and escalation paths
+- **Conversational Context**: Maintains thread-based conversation history via PostgreSQL checkpointing
+- **Streaming Generation**: Real-time token streaming with per-node execution observability
 
 ## Monorepo Structure
 
@@ -89,17 +91,18 @@ rag-search/
 ### ML Pipeline
 
 1. **Document Ingestion**
-    - Semantic Chunking strategy with tables preprocesed for financial documents
-    - Embedding generation using fine-tuned ModernBERT
-    - ChromaDB / storage with cosine similarity
+    - Semantic chunking with tables pre-processed for financial documents
+    - Dual ingestion: embeddings stored in both 128d and 768d ChromaDB collections
+    - Embedding generation using fine-tuned ModernBERT with `truncate_dim`
 
-2. **Query Processing**
-    - Query embedding with fine-tuned model (128d optimized)
-    - LangGraph-based routing: Simple vs Complex queries
-    - Multi-query generation for complex information needs
+2. **Query Processing — Adaptive Pipeline**
+    - 128d embedding for fast first-pass retrieval from the compact collection
+    - Cross-encoder reranks candidates; top-1 score gates the routing decision
+    - Strong retrieval (score ≥ threshold) → generate answer immediately
+    - Weak retrieval → expand with LLM-generated sub-queries, retrieve from 768d collection, rerank again
 
 3. **Retrieval & Generation**
-    - Top-k similarity search with configurable k
+    - Configurable top-k similarity search at each retrieval stage
     - Context-aware generation with conversation history
     - Groq LLM for fast inference
 
@@ -159,6 +162,12 @@ GROQ_API_KEY=your_groq_key
 
 # Vector Store
 CHROMA_PERSIST_DIRECTORY=./backend/data/chroma
+CHROMA_COLLECTION_128D=your_collection_128d
+CHROMA_COLLECTION_768D=your_collection_768d
+
+# Reranker
+RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+RERANK_QUALITY_THRESHOLD=0.3
 ```
 
 Create `frontend/.env.local`:
@@ -282,16 +291,17 @@ dims = [768, 512, 256, 128, 64]
 
 ### ML & Backend
 
-| Component          | Technology              |
-| ------------------ | ----------------------- |
-| Embedding Model    | ModernBERT (fine-tuned) |
-| Training Framework | Sentence Transformers   |
-| Loss Function      | Matryoshka + MNRL       |
-| Vector Store       | ChromaDB                |
-| LLM                | Groq (Llama 3.1)        |
-| Orchestration      | LangGraph               |
-| API Framework      | FastAPI                 |
-| Database           | PostgreSQL              |
+| Component          | Technology                          |
+| ------------------ | ----------------------------------- |
+| Embedding Model    | ModernBERT (fine-tuned)             |
+| Training Framework | Sentence Transformers               |
+| Loss Function      | Matryoshka + MNRL                   |
+| Vector Store       | ChromaDB (128d + 768d)              |
+| Reranker           | CrossEncoder ms-marco-MiniLM-L-6-v2 |
+| LLM                | Groq (Llama 3.1)                    |
+| Orchestration      | LangGraph                           |
+| API Framework      | FastAPI                             |
+| Database           | PostgreSQL                          |
 
 ### Frontend
 
@@ -342,27 +352,31 @@ bun start        # Start production server
 
 ## Architecture
 
-### Query Flow
+### Adaptive Retrieval Pipeline
 
-```
-User Input → Frontend (Next.js)
-             ↓ SSE Connection
-Backend (FastAPI) → LangGraph Pipeline
-                    ↓
-             Analyze Query
-                    ↓
-        ┌───────────┴──────────┐
-   [Simple]              [Complex]
-        ↓                     ↓
-  Simple Retrieval    Multi-Query Retrieval
-        └──────────┬──────────┘
-                   ↓
-            Generate Answer
-                   ↓
-        Stream Tokens via SSE
-                   ↓
-    Frontend Updates UI Real-time
-```
+````mermaid
+flowchart TD
+    A([User Query]) --> B[128d Low-Dim Retrieval<br>Chroma 128d collection]
+    B --> C[Cross-Encoder Reranking<br>ms-marco-MiniLM-L-6-v2]
+    C --> D{Quality Evaluation<br>top-1 score ≥ threshold?}
+
+    D -- Strong --> E[Generate Answer<br>Groq LLM]
+    D -- Weak --> F[768d Multi-Query Retrieval<br>LLM query expansion<br>Chroma 768d collection]
+    F --> G[Final Cross-Encoder Reranking]
+    G --> E
+
+    E --> H[Stream Tokens via SSE]
+    H --> I([Frontend — Real-time UI])
+
+    style A fill:#fff,color:#000
+    style B fill:#fff,color:#000
+    style C fill:#fff,color:#000
+    style D fill:#f5a623,color:#000
+    style E fill:#7ed321,color:#000
+    style F fill:#4a90e2,color:#000
+    style G fill:#fff,color:#000
+    style H fill:#fff,color:#000
+    style I fill:#fff,color:#000```
 
 ## Production Deployment
 
@@ -370,7 +384,7 @@ Backend (FastAPI) → LangGraph Pipeline
 
 ```bash
 docker compose up --build
-```
+````
 
 Run this from the repository root to start the dockerized application.
 
@@ -402,10 +416,10 @@ bun start
 
 ### Optimization Strategies
 
-1. **Matryoshka Embeddings**: Single model deployment, runtime dimension switching
-2. **Batch Retrieval**: Process multiple queries in parallel
-3. **Caching**: Store embeddings for frequently accessed documents
-4. **Quantization**: Further reduce memory footprint (future work)
+1. **Adaptive Cascade**: 128d fast path avoids the expensive 768d retrieval + multi-query expansion for queries where 128d already yields strong results
+2. **Single Model, Dual Dimensions**: `truncate_dim` on a single model provides both 128d and 768d embeddings with no extra memory cost
+3. **Batch Retrieval**: Process multiple queries in parallel
+4. **Caching**: Store embeddings for frequently accessed documents
 
 ## References & Resources
 
