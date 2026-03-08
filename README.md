@@ -59,6 +59,33 @@ train_loss = MatryoshkaLoss(
 # Evaluated on NDCG@10 with 128d embeddings
 ```
 
+### Adaptive Retrieval Pipeline
+
+````mermaid
+flowchart TD
+    A([User Query]) --> B[128d Low-Dim Retrieval<br>Chroma 128d collection]
+    B --> C[Cross-Encoder Reranking<br>ms-marco-MiniLM-L-6-v2]
+    C --> D{Quality Evaluation<br>top-1 score ≥ threshold?}
+
+    D -- Strong --> E[Generate Answer<br>Groq LLM]
+    D -- Weak --> F[768d Multi-Query Retrieval<br>LLM query expansion<br>Chroma 768d collection]
+    F --> G[Final Cross-Encoder Reranking]
+    G --> E
+
+    E --> H[Stream Tokens via SSE]
+    H --> I([Frontend — Real-time UI])
+
+    style A fill:#fff,color:#000
+    style B fill:#fff,color:#000
+    style C fill:#fff,color:#000
+    style D fill:#f5a623,color:#000
+    style E fill:#7ed321,color:#000
+    style F fill:#4a90e2,color:#000
+    style G fill:#fff,color:#000
+    style H fill:#fff,color:#000
+    style I fill:#fff,color:#000
+```
+
 ### Adaptive Matryoshka Retrieval Pipeline (LangGraph)
 
 - **Fast Path (128d)**: Initial retrieval using compact 128-dimensional embeddings for low-latency first-pass search
@@ -352,31 +379,6 @@ bun start        # Start production server
 
 ## Architecture
 
-### Adaptive Retrieval Pipeline
-
-````mermaid
-flowchart TD
-    A([User Query]) --> B[128d Low-Dim Retrieval<br>Chroma 128d collection]
-    B --> C[Cross-Encoder Reranking<br>ms-marco-MiniLM-L-6-v2]
-    C --> D{Quality Evaluation<br>top-1 score ≥ threshold?}
-
-    D -- Strong --> E[Generate Answer<br>Groq LLM]
-    D -- Weak --> F[768d Multi-Query Retrieval<br>LLM query expansion<br>Chroma 768d collection]
-    F --> G[Final Cross-Encoder Reranking]
-    G --> E
-
-    E --> H[Stream Tokens via SSE]
-    H --> I([Frontend — Real-time UI])
-
-    style A fill:#fff,color:#000
-    style B fill:#fff,color:#000
-    style C fill:#fff,color:#000
-    style D fill:#f5a623,color:#000
-    style E fill:#7ed321,color:#000
-    style F fill:#4a90e2,color:#000
-    style G fill:#fff,color:#000
-    style H fill:#fff,color:#000
-    style I fill:#fff,color:#000```
 
 ## Production Deployment
 
