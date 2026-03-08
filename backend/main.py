@@ -28,7 +28,7 @@ def cmd_ingest(args: IngestArgs):
     from cli.ingest import (
         load_markdown,
         split_markdown,
-        build_vectorstore,
+        build_vectorstores,
     )
 
     print(f"Extracting tables from {args.file}...")
@@ -38,9 +38,11 @@ def cmd_ingest(args: IngestArgs):
     documents = load_markdown(args.file)
     split_docs = split_markdown(documents)
     all_docs = split_docs
-    print(f"Split into {len(split_docs)} text chunks. Embedding and uploading...")
-    build_vectorstore(all_docs)
-    print(f"Done. Indexed {len(all_docs)} total chunks.")
+    print(
+        f"Split into {len(split_docs)} text chunks. Embedding and uploading to 128d + 768d collections..."
+    )
+    build_vectorstores(all_docs)
+    print(f"Done. Indexed {len(all_docs)} total chunks into both collections.")
 
 
 def cmd_query(args: QueryArgs):

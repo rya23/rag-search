@@ -11,10 +11,12 @@ interface NodeProgressProps {
 }
 
 const NODE_LABELS: Record<string, string> = {
-  analyze_query: "Analyzing Query",
-  simple_retrieve: "Retrieving Documents",
-  multi_query_retrieve: "Multi-Query Retrieval",
-  generate_answer: "Generating Answer",
+  low_dim_retrieve:              "128d Retrieval",
+  rerank:                        "Reranking",
+  evaluate_retrieval:            "Quality Check",
+  high_dim_multi_query_retrieve: "768d Full Retrieval",
+  rerank_final:                  "Final Reranking",
+  generate_answer:               "Generating Answer",
 };
 
 export function NodeProgress({ progress, isStreaming }: NodeProgressProps) {

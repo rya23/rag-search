@@ -1,7 +1,7 @@
 """
-Quick test script for the LangGraph RAG pipeline.
+Quick test script for the adaptive matryoshka RAG pipeline.
 
-This tests basic functionality without requiring a full database setup.
+Tests basic structure without requiring a full database or API setup.
 """
 
 import asyncio
@@ -9,23 +9,30 @@ import sys
 
 
 async def test_graph_structure():
-    """Test that the graph compiles without errors."""
+    """Test that the graph compiles with the correct node set."""
     print("=" * 60)
     print("TEST 1: Graph Structure")
     print("=" * 60)
 
     try:
         from cli.langgraph.graph import build_graph
+        from unittest.mock import MagicMock
 
-        graph = build_graph()
+        # Provide mock deps so graph can be built without real credentials
+        mock_vs = MagicMock()
+        mock_llm = MagicMock()
+        mock_reranker = MagicMock()
+
+        graph = build_graph(mock_vs, mock_vs, mock_llm, mock_reranker)
         print("✓ Graph built successfully")
 
-        # Check nodes
         nodes = list(graph.nodes.keys())
         expected_nodes = [
-            "analyze_query",
-            "simple_retrieve",
-            "multi_query_retrieve",
+            "low_dim_retrieve",
+            "rerank",
+            "evaluate_retrieval",
+            "high_dim_multi_query_retrieve",
+            "rerank_final",
             "generate_answer",
         ]
 
@@ -48,7 +55,7 @@ async def test_graph_structure():
 
 
 async def test_state_schema():
-    """Test that the state schema is properly defined."""
+    """Test that the state schema includes all required fields."""
     print("\n" + "=" * 60)
     print("TEST 2: State Schema")
     print("=" * 60)
@@ -56,13 +63,12 @@ async def test_state_schema():
     try:
         from cli.langgraph.state import RAGState
 
-        # Create a minimal state
         test_state: RAGState = {
             "query": "Test query",
             "messages": [],
             "k": 5,
-            "query_complexity": "simple",
-            "query_length": 2,
+            "query_complexity": "",
+            "query_length": 0,
             "has_complex_keywords": False,
             "docs": [],
             "retrieval_method": "",
@@ -70,12 +76,16 @@ async def test_state_schema():
             "answer": "",
             "multiquery_steps": None,
             "steps_taken": [],
+            "rerank_scores": [],
+            "retrieval_quality": "",
+            "embedding_dim": 0,
         }
 
-        print(f"✓ RAGState schema validated")
+        print(f"✓ RAGState schema validated with all fields")
         print(f"  - Query: {test_state['query']}")
-        print(f"  - k: {test_state['k']}")
-        print(f"  - Complexity: {test_state['query_complexity']}")
+        print(f"  - embedding_dim: {test_state['embedding_dim']}")
+        print(f"  - retrieval_quality: '{test_state['retrieval_quality']}'")
+        print(f"  - rerank_scores: {test_state['rerank_scores']}")
 
         return True
 
@@ -87,65 +97,63 @@ async def test_state_schema():
         return False
 
 
-async def test_analyze_query_node():
-    """Test the query analysis node logic."""
+async def test_evaluate_retrieval_node():
+    """Test the retrieval quality evaluation node logic."""
     print("\n" + "=" * 60)
-    print("TEST 3: Query Analysis Node")
+    print("TEST 3: Evaluate Retrieval Node")
     print("=" * 60)
 
     try:
-        from cli.langgraph.nodes import analyze_query
+        import os
+
+        os.environ.setdefault("RERANK_QUALITY_THRESHOLD", "0.3")
+
+        from cli.langgraph.nodes import evaluate_retrieval
         from cli.langgraph.state import RAGState
 
-        # Test simple query
-        simple_state: RAGState = {
-            "query": "What is revenue?",
+        base_state: RAGState = {
+            "query": "What is the revenue?",
             "messages": [],
             "k": 5,
             "query_complexity": "",
             "query_length": 0,
             "has_complex_keywords": False,
             "docs": [],
-            "retrieval_method": "",
-            "retrieval_attempts": 0,
+            "retrieval_method": "low_dim",
+            "retrieval_attempts": 1,
             "answer": "",
             "multiquery_steps": None,
-            "steps_taken": [],
+            "steps_taken": ["low_dim_retrieve", "rerank"],
+            "rerank_scores": [0.85, 0.60, 0.20],
+            "retrieval_quality": "",
+            "embedding_dim": 128,
         }
 
-        result = analyze_query(simple_state)
-        print(f"✓ Simple query analysis:")
-        print(f"  - Query: '{simple_state['query']}'")
-        print(f"  - Complexity: {result['query_complexity']}")
-        print(f"  - Length: {result['query_length']} words")
+        result = evaluate_retrieval(base_state)
+        print(f"✓ Strong retrieval (top score=0.85 >= 0.3):")
+        print(f"  - retrieval_quality: {result['retrieval_quality']}")
+        assert result["retrieval_quality"] == "strong", "Expected 'strong'"
 
-        # Test complex query
-        complex_state: RAGState = {
-            "query": "Compare the revenue trends between Apple and Microsoft over the last 5 years and analyze the impact of their cloud strategies",
-            "messages": [],
-            "k": 5,
-            "query_complexity": "",
-            "query_length": 0,
-            "has_complex_keywords": False,
-            "docs": [],
-            "retrieval_method": "",
-            "retrieval_attempts": 0,
-            "answer": "",
-            "multiquery_steps": None,
-            "steps_taken": [],
-        }
+        weak_state = dict(base_state)
+        weak_state["rerank_scores"] = [0.15, 0.10, 0.05]
+        result2 = evaluate_retrieval(weak_state)
+        print(f"\n✓ Weak retrieval (top score=0.15 < 0.3):")
+        print(f"  - retrieval_quality: {result2['retrieval_quality']}")
+        assert result2["retrieval_quality"] == "weak", "Expected 'weak'"
 
-        result2 = analyze_query(complex_state)
-        print(f"\n✓ Complex query analysis:")
-        print(f"  - Query: '{complex_state['query'][:60]}...'")
-        print(f"  - Complexity: {result2['query_complexity']}")
-        print(f"  - Length: {result2['query_length']} words")
-        print(f"  - Has complex keywords: {result2['has_complex_keywords']}")
+        empty_state = dict(base_state)
+        empty_state["rerank_scores"] = []
+        result3 = evaluate_retrieval(empty_state)
+        print(f"\n✓ Empty scores → weak:")
+        print(f"  - retrieval_quality: {result3['retrieval_quality']}")
+        assert result3["retrieval_quality"] == "weak", (
+            "Expected 'weak' for empty scores"
+        )
 
         return True
 
     except Exception as e:
-        print(f"✗ Error in query analysis: {e}")
+        print(f"✗ Error in evaluate_retrieval: {e}")
         import traceback
 
         traceback.print_exc()
@@ -153,52 +161,44 @@ async def test_analyze_query_node():
 
 
 async def test_routing_logic():
-    """Test the conditional routing logic."""
+    """Test the route_after_eval conditional routing."""
     print("\n" + "=" * 60)
     print("TEST 4: Routing Logic")
     print("=" * 60)
 
     try:
-        from cli.langgraph.routing import route_retrieval
+        from cli.langgraph.routing import route_after_eval
         from cli.langgraph.state import RAGState
 
-        # Test simple routing
-        simple_state: RAGState = {
+        base_state: RAGState = {
             "query": "Test",
             "messages": [],
             "k": 5,
-            "query_complexity": "simple",
-            "query_length": 1,
+            "query_complexity": "",
+            "query_length": 0,
             "has_complex_keywords": False,
             "docs": [],
-            "retrieval_method": "",
-            "retrieval_attempts": 0,
+            "retrieval_method": "low_dim",
+            "retrieval_attempts": 1,
             "answer": "",
             "multiquery_steps": None,
             "steps_taken": [],
+            "rerank_scores": [0.85],
+            "retrieval_quality": "strong",
+            "embedding_dim": 128,
         }
 
-        route = route_retrieval(simple_state)
-        print(f"✓ Simple query routes to: {route}")
+        route = route_after_eval(base_state)
+        print(f"✓ Strong quality routes to: {route}")
+        assert route == "generate_answer", f"Expected 'generate_answer', got '{route}'"
 
-        # Test complex routing
-        complex_state: RAGState = {
-            "query": "Test",
-            "messages": [],
-            "k": 5,
-            "query_complexity": "complex",
-            "query_length": 20,
-            "has_complex_keywords": True,
-            "docs": [],
-            "retrieval_method": "",
-            "retrieval_attempts": 0,
-            "answer": "",
-            "multiquery_steps": None,
-            "steps_taken": [],
-        }
-
-        route2 = route_retrieval(complex_state)
-        print(f"✓ Complex query routes to: {route2}")
+        weak_state = dict(base_state)
+        weak_state["retrieval_quality"] = "weak"
+        route2 = route_after_eval(weak_state)
+        print(f"✓ Weak quality routes to: {route2}")
+        assert route2 == "high_dim_multi_query_retrieve", (
+            f"Expected 'high_dim_multi_query_retrieve', got '{route2}'"
+        )
 
         return True
 
@@ -213,18 +213,16 @@ async def test_routing_logic():
 async def main():
     """Run all tests."""
     print("\n" + "=" * 60)
-    print("LANGGRAPH RAG PIPELINE - STRUCTURE TESTS")
+    print("ADAPTIVE MATRYOSHKA RAG PIPELINE - STRUCTURE TESTS")
     print("=" * 60 + "\n")
 
     results = []
 
-    # Run tests
     results.append(await test_graph_structure())
     results.append(await test_state_schema())
-    results.append(await test_analyze_query_node())
+    results.append(await test_evaluate_retrieval_node())
     results.append(await test_routing_logic())
 
-    # Summary
     print("\n" + "=" * 60)
     print("TEST SUMMARY")
     print("=" * 60)
@@ -236,11 +234,9 @@ async def main():
 
     if passed == total:
         print("\n✓ ALL TESTS PASSED!")
-        print("\nThe LangGraph pipeline structure is correctly implemented.")
-        print("Next steps:")
-        print("  1. Set up your .env file with database credentials")
-        print("  2. Test with actual data: python main.py query")
-        print("  3. Try conversation mode: python main.py query --conversation")
+        print("\nNext steps:")
+        print("  1. Run: rag ingest data/report.md  (creates 128d + 768d collections)")
+        print("  2. Run: rag query -q 'What is the revenue?'")
         return 0
     else:
         print(f"\n✗ {total - passed} test(s) failed")

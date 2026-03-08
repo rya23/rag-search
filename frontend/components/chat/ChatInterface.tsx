@@ -31,7 +31,7 @@ export function ChatInterface() {
   const [k, setK] = useState(DEFAULT_K);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { messages, isStreaming, error, traceId, threadId, nodeProgress, retrievalMethod, sendQuery, reset } =
+  const { messages, isStreaming, error, traceId, threadId, nodeProgress, retrievalMethod, retrievalQuality, sendQuery, reset } =
     useSSEQuery();
 
   // Auto-scroll to bottom when new messages arrive
@@ -66,8 +66,29 @@ export function ChatInterface() {
             <div className="flex items-center gap-2">
               {retrievalMethod && (
                 <Badge variant="secondary" className="text-xs font-medium">
-                  {retrievalMethod === "simple_retrieve" ? "Simple" : "Multi-Query"}
+                  {retrievalMethod === "low_dim"
+                    ? "128d · Fast Path"
+                    : retrievalMethod === "high_dim_multi"
+                    ? "768d · Full Retrieval"
+                    : retrievalMethod}
                 </Badge>
+              )}
+              {retrievalQuality === "strong" && (
+                <Badge className="text-xs font-medium bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30">
+                  Strong
+                </Badge>
+              )}
+              {retrievalQuality === "weak" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge className="text-xs font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 cursor-default">
+                      Upgraded
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>128d retrieval scored below threshold — escalated to 768d + multi-query</p>
+                  </TooltipContent>
+                </Tooltip>
               )}
               {threadId && (
                 <Tooltip>
@@ -171,7 +192,7 @@ export function ChatInterface() {
                   </div>
                   <div className="flex flex-wrap gap-2 justify-center pt-4">
                     <Badge variant="outline" className="text-xs">
-                      Multi-Query Retrieval
+                      Adaptive Retrieval
                     </Badge>
                     <Badge variant="outline" className="text-xs">
                       Semantic Search

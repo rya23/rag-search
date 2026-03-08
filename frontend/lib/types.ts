@@ -11,6 +11,7 @@ export type SSEEvent =
   | { type: "thread_id"; data: string }
   | { type: "node"; data: string }
   | { type: "retrieval_method"; data: string }
+  | { type: "retrieval_quality"; data: string }
   | { type: "token"; data: string }
   | { type: "error"; data: string }
   | { type: "done" };
@@ -70,9 +71,11 @@ export interface RetrievedDocument {
 
 // Node execution progress
 export type NodeName =
-  | "analyze_query"
-  | "simple_retrieve"
-  | "multi_query_retrieve"
+  | "low_dim_retrieve"
+  | "rerank"
+  | "evaluate_retrieval"
+  | "high_dim_multi_query_retrieve"
+  | "rerank_final"
   | "generate_answer";
 
 export interface NodeProgress {

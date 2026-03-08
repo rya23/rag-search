@@ -14,6 +14,14 @@ interface TraceOverviewProps {
     trace: TraceDetail;
 }
 
+function formatRetrievalMode(mode: string): string {
+    if (mode === "low_dim") return "128d Fast Path";
+    if (mode === "high_dim_multi") return "768d Full Retrieval";
+    if (mode === "multi_query_retrieve") return "Multi-Query";
+    if (mode === "simple") return "Simple";
+    return mode;
+}
+
 export function TraceOverview({ trace }: TraceOverviewProps) {
     return (
         <div className="space-y-4 animate-in">
@@ -79,8 +87,14 @@ export function TraceOverview({ trace }: TraceOverviewProps) {
                         <div>
                             <div className="text-xs text-muted-foreground mb-2">Retrieval Mode</div>
                             <Badge variant="outline" className="font-medium">
-                                {trace.mode === "multi_query_retrieve" ? "Multi-Query" : "Simple"}
+                                {formatRetrievalMode(trace.mode)}
                             </Badge>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground mb-2">Embedding Dim</div>
+                            <div className="font-mono text-lg font-semibold">
+                                {trace.mode === "low_dim" ? "128d" : trace.mode === "high_dim_multi" ? "768d" : "—"}
+                            </div>
                         </div>
                         <div>
                             <div className="text-xs text-muted-foreground mb-2">Documents (k)</div>

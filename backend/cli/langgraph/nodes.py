@@ -1,4 +1,6 @@
-"""Node implementations for the LangGraph RAG pipeline."""
+"""Node implementations for the adaptive matryoshka RAG pipeline."""
+
+import os
 
 from langchain_classic.prompts import PromptTemplate
 from langchain_core.documents import Document
@@ -62,67 +64,94 @@ If the retrieved information doesn't contain sufficient data to answer the quest
 
 
 # =============================================================================
-# Query Analysis Node (no deps needed)
-# =============================================================================
-
-
-def analyze_query(state: RAGState) -> dict:
-    """Classify query complexity to determine retrieval strategy."""
-    query = state["query"]
-    word_count = len(query.split())
-
-    complex_keywords = [
-        "compare", "analyze", "trend", "over time", "versus", "vs",
-        "difference between", "why did", "breakdown", "detailed analysis",
-        "how does", "relationship between", "impact of", "correlation",
-        "historical", "evolution", "change over",
-    ]
-
-    has_complex_intent = any(kw in query.lower() for kw in complex_keywords)
-    complexity = "complex" if (has_complex_intent or word_count > 15) else "simple"
-
-    steps = state.get("steps_taken", [])
-    steps.append("analyze_query")
-
-    return {
-        "query_complexity": complexity,
-        "query_length": word_count,
-        "has_complex_keywords": has_complex_intent,
-        "steps_taken": steps,
-    }
-
-
-# =============================================================================
 # Retrieval Node Factories
 # =============================================================================
 
 
-def make_simple_retrieve(vectorstore):
-    """Return a simple_retrieve node with vectorstore injected."""
+def make_low_dim_retrieve(vectorstore_128d):
+    """Return a low_dim_retrieve node using the 128d Chroma collection."""
 
-    def simple_retrieve(state: RAGState) -> dict:
-        docs = vectorstore.similarity_search(state["query"], k=state.get("k", 5))
+    def low_dim_retrieve(state: RAGState) -> dict:
+        docs = vectorstore_128d.similarity_search(state["query"], k=state.get("k", 5))
         steps = state.get("steps_taken", [])
-        steps.append("simple_retrieve")
+        steps.append("low_dim_retrieve")
         return {
             "docs": docs,
-            "retrieval_method": "simple",
+            "retrieval_method": "low_dim",
             "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+            "embedding_dim": 128,
             "steps_taken": steps,
         }
 
-    return simple_retrieve
+    return low_dim_retrieve
 
 
-def make_multi_query_retrieve(vectorstore, llm):
-    """Return a multi_query_retrieve node with vectorstore and llm injected."""
+def make_rerank(reranker, step_name: str = "rerank"):
+    """
+    Return a rerank node using a local cross-encoder.
+
+    Scores all (query, doc) pairs, sorts by score descending, and stores
+    scores in state so evaluate_retrieval can read them.
+
+    step_name allows the same factory to produce both the initial rerank
+    and the final rerank nodes without duplicating logic.
+    """
+
+    def rerank(state: RAGState) -> dict:
+        query = state["query"]
+        docs = state["docs"]
+        steps = state.get("steps_taken", [])
+        steps.append(step_name)
+
+        if not docs:
+            return {"docs": [], "rerank_scores": [], "steps_taken": steps}
+
+        pairs = [(query, doc.page_content) for doc in docs]
+        raw_scores = reranker.predict(pairs)
+
+        ranked = sorted(zip(raw_scores, docs), key=lambda pair: pair[0], reverse=True)
+        sorted_scores = [float(score) for score, _ in ranked]
+        sorted_docs = [doc for _, doc in ranked]
+
+        return {
+            "docs": sorted_docs,
+            "rerank_scores": sorted_scores,
+            "steps_taken": steps,
+        }
+
+    return rerank
+
+
+def evaluate_retrieval(state: RAGState) -> dict:
+    """
+    Check top-1 cross-encoder score against threshold to classify retrieval quality.
+
+    Reads RERANK_QUALITY_THRESHOLD from environment (default 0.3).
+    Sets retrieval_quality to 'strong' or 'weak' for routing.
+    """
+    threshold = float(os.environ.get("RERANK_QUALITY_THRESHOLD", "0.3"))
+    scores = state.get("rerank_scores", [])
+    top_score = scores[0] if scores else 0.0
+    quality = "strong" if top_score >= threshold else "weak"
+
+    steps = state.get("steps_taken", [])
+    steps.append("evaluate_retrieval")
+
+    return {"retrieval_quality": quality, "steps_taken": steps}
+
+
+def make_high_dim_multi_query_retrieve(vectorstore_768d, llm):
+    """
+    Return a high_dim_multi_query_retrieve node using the 768d collection
+    with multi-query expansion. Only invoked when retrieval quality is weak.
+    """
     from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 
-    def multi_query_retrieve(state: RAGState) -> dict:
+    def high_dim_multi_query_retrieve(state: RAGState) -> dict:
         k = state.get("k", 5)
         query = state["query"]
 
-        base_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+        base_retriever = vectorstore_768d.as_retriever(search_kwargs={"k": k})
         mq = MultiQueryRetriever.from_llm(
             retriever=base_retriever, llm=llm, prompt=MULTI_QUERY_PROMPT
         )
@@ -141,12 +170,13 @@ def make_multi_query_retrieve(vectorstore, llm):
         unique_docs = {doc.page_content: doc for doc in all_docs}
 
         steps = state.get("steps_taken", [])
-        steps.append("multi_query_retrieve")
+        steps.append("high_dim_multi_query_retrieve")
 
         return {
             "docs": list(unique_docs.values()),
-            "retrieval_method": "multi",
+            "retrieval_method": "high_dim_multi",
             "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+            "embedding_dim": 768,
             "multiquery_steps": MultiQueryStep(
                 prompt_sent=prompt_sent,
                 generated_queries=list(llm_result),
@@ -155,7 +185,7 @@ def make_multi_query_retrieve(vectorstore, llm):
             "steps_taken": steps,
         }
 
-    return multi_query_retrieve
+    return high_dim_multi_query_retrieve
 
 
 # =============================================================================
@@ -170,7 +200,9 @@ def make_generate_answer(llm):
         context = "\n\n---\n\n".join(doc.page_content for doc in state["docs"])
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=_ANSWER_PROMPT.format(context=context, query=state["query"])),
+            HumanMessage(
+                content=_ANSWER_PROMPT.format(context=context, query=state["query"])
+            ),
         ]
         response = llm.invoke(messages)
         content = response.content

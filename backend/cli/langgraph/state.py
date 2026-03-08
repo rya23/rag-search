@@ -43,10 +43,19 @@ class RAGState(TypedDict):
     """Retrieved documents from vector store."""
 
     retrieval_method: str
-    """Which retrieval strategy was used: 'simple' | 'multi'."""
+    """Which retrieval strategy was used: 'low_dim' | 'high_dim_multi'."""
 
     retrieval_attempts: int
-    """Number of retrieval attempts (for potential re-retrieval logic)."""
+    """Number of retrieval attempts."""
+
+    embedding_dim: int
+    """Embedding dimension used for the most recent retrieval: 128 | 768. 0 in initial state."""
+
+    rerank_scores: list[float]
+    """Cross-encoder scores in descending order after reranking. scores[0] is used for quality eval."""
+
+    retrieval_quality: str
+    """Quality classification after reranking: 'strong' | 'weak' | '' (initial)."""
 
     # ===== Generation =====
     answer: str

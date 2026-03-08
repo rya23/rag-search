@@ -6,8 +6,12 @@ from langchain_text_splitters import (
 )
 from langchain_experimental.text_splitter import SemanticChunker
 from dotenv import load_dotenv
-from backend.cli.preprocess_tables import format_table_compact, markdown_table_to_df
-from database.dependencies import get_embeddings, get_vectorstore
+from cli.preprocess_tables import format_table_compact, markdown_table_to_df
+from database.dependencies import (
+    get_embeddings,
+    get_vectorstore_128d,
+    get_vectorstore_768d,
+)
 
 load_dotenv()
 
@@ -114,25 +118,34 @@ def split_markdown(documents):
     return final_docs
 
 
-def build_vectorstore(docs):
-    vectorstore = get_vectorstore()
-    embeddings = get_embeddings()
+def _ingest_into_collection(docs, vectorstore, label: str):
+    """Ingest pre-chunked docs into a single Chroma collection, printing dimension info."""
+    embeddings = vectorstore._embedding_function
+    test_vector = embeddings.embed_query("dimension check")
+    print(f"[{label}] Embedding dimension: {len(test_vector)}")
 
-    # Optional sanity check
-    test_vector = embeddings.embed_query("test")
-    print(f"Embedding dimension: {len(test_vector)}")
-
-    # Batch insertion
     for i in range(0, len(docs), BATCH_SIZE):
         docs_batch = docs[i : i + BATCH_SIZE]
         ids_batch = [str(uuid4()) for _ in range(len(docs_batch))]
-
-        vectorstore.add_documents(
-            documents=docs_batch,
-            ids=ids_batch,
+        vectorstore.add_documents(documents=docs_batch, ids=ids_batch)
+        print(
+            f"[{label}] Ingested batch {i // BATCH_SIZE + 1} "
+            f"({min(i + BATCH_SIZE, len(docs))}/{len(docs)} chunks)"
         )
 
     return vectorstore
+
+
+def build_vectorstores(docs):
+    """
+    Ingest docs into both the 128d and 768d Chroma collections.
+    Chunk once, embed-and-insert twice into separate collections.
+    """
+    print("=== Ingesting 128d collection ===")
+    _ingest_into_collection(docs, get_vectorstore_128d(), label="128d")
+
+    print("=== Ingesting 768d collection ===")
+    _ingest_into_collection(docs, get_vectorstore_768d(), label="768d")
 
 
 if __name__ == "__main__":
@@ -140,6 +153,6 @@ if __name__ == "__main__":
 
     documents = load_markdown(file_path)
     split_docs = split_markdown(documents)
-    vectorstore = build_vectorstore(split_docs)
+    build_vectorstores(split_docs)
 
-    print(f"Indexed {len(split_docs)} chunks.")
+    print(f"Indexed {len(split_docs)} chunks into both collections.")

@@ -9,9 +9,14 @@ import asyncio
 
 async def visualize_graph():
     """Generate and save a visualization of the RAG pipeline graph."""
+    from unittest.mock import MagicMock
     from cli.langgraph.graph import build_graph
 
-    graph = build_graph()
+    mock_vs = MagicMock()
+    mock_llm = MagicMock()
+    mock_reranker = MagicMock()
+
+    graph = build_graph(mock_vs, mock_vs, mock_llm, mock_reranker)
 
     # Compile the graph
     compiled = graph.compile()

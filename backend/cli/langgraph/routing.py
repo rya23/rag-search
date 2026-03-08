@@ -1,19 +1,16 @@
-"""Conditional routing logic for the LangGraph RAG pipeline."""
+"""Conditional routing logic for the adaptive matryoshka RAG pipeline."""
 
 from .state import RAGState
 
 
-def route_retrieval(state: RAGState) -> str:
+def route_after_eval(state: RAGState) -> str:
     """
-    Route to appropriate retrieval strategy based on query analysis.
+    Route based on retrieval quality established by evaluate_retrieval.
 
-    Returns the name of the node to execute next:
-    - "simple_retrieve": for straightforward queries
-    - "multi_query_retrieve": for complex analytical queries
+    Returns:
+        'generate_answer'                if quality == 'strong'
+        'high_dim_multi_query_retrieve'  if quality == 'weak'
     """
-    complexity = state.get("query_complexity", "simple")
-
-    if complexity == "complex":
-        return "multi_query_retrieve"
-    else:
-        return "simple_retrieve"
+    if state.get("retrieval_quality", "weak") == "strong":
+        return "generate_answer"
+    return "high_dim_multi_query_retrieve"

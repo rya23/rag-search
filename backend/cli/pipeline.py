@@ -31,6 +31,9 @@ def _build_initial_state(query: str, k: int) -> dict:
         "answer": "",
         "multiquery_steps": None,
         "steps_taken": [],
+        "rerank_scores": [],
+        "retrieval_quality": "",
+        "embedding_dim": 0,
     }
 
 
@@ -40,12 +43,23 @@ class RAGPipeline:
         self._thread_id: str | None = None
 
         # Load deps and build graph here (sync context, no running event loop yet)
-        from database.dependencies import get_llm, get_vectorstore
+        from database.dependencies import (
+            get_llm,
+            get_reranker,
+            get_vectorstore_128d,
+            get_vectorstore_768d,
+        )
         from cli.langgraph_pipeline import build_rag_graph
 
-        vectorstore = get_vectorstore()
+        vectorstore_128d = get_vectorstore_128d()
+        vectorstore_768d = get_vectorstore_768d()
         llm = get_llm()
-        self._graph = asyncio.run(build_rag_graph(vectorstore, llm, with_checkpointing))
+        reranker = get_reranker()
+        self._graph = asyncio.run(
+            build_rag_graph(
+                vectorstore_128d, vectorstore_768d, llm, reranker, with_checkpointing
+            )
+        )
 
     def set_thread_id(self, thread_id: str) -> "RAGPipeline":
         self._thread_id = thread_id

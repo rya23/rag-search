@@ -13,6 +13,13 @@ import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export default function TracesPage() {
+    function formatRetrievalMode(mode: string): string {
+        if (mode === "low_dim") return "128d Fast Path";
+        if (mode === "high_dim_multi") return "768d Full Retrieval";
+        if (mode === "multi_query_retrieve") return "Multi-Query";
+        if (mode === "simple") return "Simple";
+        return mode;
+    }
     const {
         data: traces,
         isLoading,
@@ -111,7 +118,7 @@ export default function TracesPage() {
                                                                 </Badge>
                                                                 {(trace.retriever_mode || trace.mode) && (
                                                                     <Badge variant="outline" className="text-xs">
-                                                                        {(trace.retriever_mode || trace.mode).replace("_", " ")}
+                                                                        {formatRetrievalMode(trace.retriever_mode || trace.mode)}
                                                                     </Badge>
                                                                 )}
                                                             </div>

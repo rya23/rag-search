@@ -47,14 +47,23 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from database.dependencies import get_llm, get_vectorstore
+    from database.dependencies import (
+        get_llm,
+        get_reranker,
+        get_vectorstore_128d,
+        get_vectorstore_768d,
+    )
     from cli.langgraph_pipeline import build_rag_graph
 
-    print("Loading embedding model and vectorstore...", flush=True)
-    vectorstore = get_vectorstore()
+    print("Loading embedding model and vectorstores...", flush=True)
+    vectorstore_128d = get_vectorstore_128d()
+    vectorstore_768d = get_vectorstore_768d()
     llm = get_llm()
+    reranker = get_reranker()
     print("Building LangGraph pipeline...", flush=True)
-    app.state.graph = await build_rag_graph(vectorstore, llm, with_checkpointing=True)
+    app.state.graph = await build_rag_graph(
+        vectorstore_128d, vectorstore_768d, llm, reranker, with_checkpointing=True
+    )
     print("Server ready.", flush=True)
     yield
 
@@ -117,6 +126,9 @@ async def _sse_events(
             "answer": "",
             "multiquery_steps": None,
             "steps_taken": [],
+            "rerank_scores": [],
+            "retrieval_quality": "",
+            "embedding_dim": 0,
         }
 
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
@@ -131,9 +143,11 @@ async def _sse_events(
         t_generation = None
 
         _RAG_NODES = {
-            "analyze_query",
-            "simple_retrieve",
-            "multi_query_retrieve",
+            "low_dim_retrieve",
+            "rerank",
+            "evaluate_retrieval",
+            "high_dim_multi_query_retrieve",
+            "rerank_final",
             "generate_answer",
         }
         _emitted_nodes: set[str] = set()
@@ -149,25 +163,36 @@ async def _sse_events(
                     _emitted_nodes.add(ev_name)
                     yield _sse({"type": "node", "data": ev_name})
 
-                if (
-                    ev_name in ("simple_retrieve", "multi_query_retrieve")
-                    and t_retrieval is None
-                ):
+                if ev_name == "low_dim_retrieve" and t_retrieval is None:
                     t_retrieval = time.perf_counter()
                 elif ev_name == "generate_answer" and t_generation is None:
                     t_generation = time.perf_counter()
 
-            elif ev_type == "on_chain_end" and ev_name in (
-                "simple_retrieve",
-                "multi_query_retrieve",
+            elif ev_type == "on_chain_end" and ev_name in ("rerank", "rerank_final"):
+                output = event.get("data", {}).get("output", {}) or {}
+                docs = output.get("docs", docs)
+                if ev_name == "rerank_final":
+                    retrieval_method = "high_dim_multi"
+                    if t_retrieval is not None:
+                        retriever_ms = int((time.perf_counter() - t_retrieval) * 1000)
+                    yield _sse({"type": "retrieval_method", "data": retrieval_method})
+
+            elif ev_type == "on_chain_end" and ev_name == "evaluate_retrieval":
+                output = event.get("data", {}).get("output", {}) or {}
+                quality = output.get("retrieval_quality", "")
+                if quality:
+                    yield _sse({"type": "retrieval_quality", "data": quality})
+                if quality == "strong":
+                    retrieval_method = "low_dim"
+                    if t_retrieval is not None:
+                        retriever_ms = int((time.perf_counter() - t_retrieval) * 1000)
+                    yield _sse({"type": "retrieval_method", "data": retrieval_method})
+
+            elif (
+                ev_type == "on_chain_end" and ev_name == "high_dim_multi_query_retrieve"
             ):
                 output = event.get("data", {}).get("output", {}) or {}
-                docs = output.get("docs", [])
-                retrieval_method = output.get("retrieval_method", ev_name)
                 multiquery_steps = output.get("multiquery_steps")
-                if t_retrieval is not None:
-                    retriever_ms = int((time.perf_counter() - t_retrieval) * 1000)
-                yield _sse({"type": "retrieval_method", "data": retrieval_method})
 
             elif ev_type == "on_chain_end" and ev_name == "generate_answer":
                 if t_generation is not None:
@@ -236,7 +261,9 @@ async def query_endpoint(req: QueryRequest, request: Request) -> StreamingRespon
 
 
 @app.post("/api/conversation")
-async def conversation_endpoint(req: QueryRequest, request: Request) -> StreamingResponse:
+async def conversation_endpoint(
+    req: QueryRequest, request: Request
+) -> StreamingResponse:
     if req.k < 1:
         raise HTTPException(status_code=400, detail="k must be >= 1")
 
@@ -300,7 +327,9 @@ async def get_multiquery_steps(trace_id: str):
         raise HTTPException(status_code=404, detail="Trace not found")
     steps = await store.get_multiquery_steps(trace_id)
     if steps is None:
-        raise HTTPException(status_code=404, detail="No multi-query steps for this trace")
+        raise HTTPException(
+            status_code=404, detail="No multi-query steps for this trace"
+        )
     return steps
 
 
