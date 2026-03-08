@@ -61,7 +61,7 @@ train_loss = MatryoshkaLoss(
 
 ### Adaptive Retrieval Pipeline
 
-````mermaid
+```mermaid
 flowchart TD
     A([User Query]) --> B[128d Low-Dim Retrieval<br>Chroma 128d collection]
     B --> C[Cross-Encoder Reranking<br>ms-marco-MiniLM-L-6-v2]
@@ -379,14 +379,13 @@ bun start        # Start production server
 
 ## Architecture
 
-
 ## Production Deployment
 
 ### Docker Compose
 
 ```bash
 docker compose up --build
-````
+```
 
 Run this from the repository root to start the dockerized application.
 
