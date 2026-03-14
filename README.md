@@ -4,7 +4,7 @@ A Retrieval-Augmented Generation system featuring a fine-tuned embedding model t
 
 ![website_demo](public/demo.gif)
 
-## 🎯 Key ML Features
+## Key ML Features
 
 ### Fine-Tuned Embedding Model
 
