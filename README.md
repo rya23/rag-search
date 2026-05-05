@@ -85,6 +85,70 @@ flowchart TD
     style H fill:#fff,color:#000
     style I fill:#fff,color:#000
 ```
+#### System Architecture
+
+```text
+Browser
+  -> Frontend (public Cloud Run)
+  -> Orchestrator (public Cloud Run)
+      -> Embedding service (private Cloud Run)
+      -> Reranker service (private Cloud Run)
+      -> Ingestion service API (private Cloud Run)
+          -> Cloud Storage bucket for uploaded files
+          -> Cloud SQL PostgreSQL for job metadata and document chunks
+          -> Pub/Sub topic for ingestion events
+      -> Groq API (external)
+
+Pub/Sub push subscription
+  -> Ingestion worker (private Cloud Run HTTP service)
+      -> Cloud SQL PostgreSQL
+      -> Cloud Storage bucket for uploaded files
+      -> Embedding service (private Cloud Run)
+```
+
+```mermaid
+flowchart LR
+  Browser[Browser / User]
+
+  subgraph Public[Public Cloud Run]
+    FE[Frontend]
+    ORCH[Orchestrator]
+  end
+
+  subgraph Private[Private Cloud Run]
+    EMB[Embedding Service]
+    RER[Reranker Service]
+    ING[Ingestion API]
+    WRK[Ingestion Worker]
+  end
+
+  subgraph Data[Managed Data Services]
+    GCS[(Cloud Storage Bucket)]
+    SQL[(Cloud SQL PostgreSQL + pgvector)]
+    PS[(Pub/Sub Topic + Push Subscription)]
+  end
+
+  Groq[(Groq API)]
+
+  Browser --> FE --> ORCH
+  ORCH -->|ID token / IAM| EMB
+  ORCH -->|ID token / IAM| RER
+  ORCH -->|ID token / IAM| ING
+  ORCH -->|LLM request| Groq
+
+  ING -->|upload file| GCS
+  ING -->|create job| SQL
+  ING -->|publish event| PS
+
+  PS -->|push HTTP request| WRK
+  WRK -->|read file| GCS
+  WRK -->|claim job / write chunks| SQL
+  WRK -->|embed chunks| EMB
+
+  ORCH -->|query chunks| SQL
+```
+
+
 
 ### Adaptive Matryoshka Retrieval Pipeline (LangGraph)
 
